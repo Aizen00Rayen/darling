@@ -33,7 +33,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="fr" className={`${dmSans.variable} ${spaceGrotesk.variable}`}>
+    <html lang="fr" data-scroll-behavior="smooth" className={`${dmSans.variable} ${spaceGrotesk.variable}`}>
       <body>{children}</body>
     </html>
   );

@@ -37,7 +37,6 @@ export function LayeringSection() {
           className="editorial-star"
           width={240}
           height={240}
-          style={{ height: 'auto' }}
         />
       </div>
     </section>

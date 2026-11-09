@@ -145,7 +145,12 @@ export function OrderForm({ product, shadeCode }: Props) {
             name="wilayaCode"
             required
             value={wilayaCode ?? ''}
-            onChange={(e) => setWilayaCode(e.target.value ? Number(e.target.value) : null)}
+            onChange={(e) => {
+              const code = e.target.value ? Number(e.target.value) : null;
+              setWilayaCode(code);
+              // As on the live site, a forced switch to home delivery sticks.
+              setChosenMode((current) => resolveMode(code, current));
+            }}
           >
             <option value="">Choisissez votre wilaya</option>
             {wilayas.map((wilaya) => (

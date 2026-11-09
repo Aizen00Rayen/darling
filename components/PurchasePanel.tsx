@@ -16,7 +16,9 @@ export function PurchasePanel({ product }: { product: Product }) {
   const [slideIndex, setSlideIndex] = useState(0);
 
   const shade = product.shades[shadeIndex];
-  const [amount, currency] = formatMoney(product.price).split(/\s(?=DA$)/);
+  // Static price labels use plain spaces, as the live markup does.
+  const priceLabel = formatMoney(product.price).replace(/\s/g, ' ');
+  const amount = priceLabel.replace(/ DA$/, '');
   const [firstWord, ...otherWords] = product.name.toUpperCase().split(' ');
 
   function chooseShade(index: number) {
@@ -54,7 +56,7 @@ export function PurchasePanel({ product }: { product: Product }) {
             Le gloss qui fait craquer.
           </p>
           <div className="price">
-            {amount} <span>{currency}</span>
+            {amount} <span>DA</span>
           </div>
         </div>
         <p className="description">
@@ -77,7 +79,7 @@ export function PurchasePanel({ product }: { product: Product }) {
       </div>
       <MobileBuyBar
         name={product.name}
-        price={formatMoney(product.price)}
+        price={priceLabel}
         shadeCode={shade.code}
         formId={ORDER_FORM_ID}
       />
