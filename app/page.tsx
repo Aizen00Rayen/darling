@@ -1,3 +1,6 @@
+import { ProductPage } from '@/components/ProductPage';
+import { defaultProduct } from '@/data/products';
+
 export default function Home() {
-  return null;
+  return <ProductPage product={defaultProduct} />;
 }
