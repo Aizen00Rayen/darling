@@ -13,7 +13,11 @@ export type Access =
   | { kind: 'permission'; permission: Permission }
   | { kind: 'owner' };
 
-/** Set on `request.auth` by the auth plugin once it has resolved a valid session. */
+/**
+ * Set on `request.auth` by the auth plugin once it has resolved a valid session. The auth plugin
+ * must do this in an `onRequest` hook: access is enforced in `preValidation`, which runs after every
+ * `onRequest` hook.
+ */
 export type AuthContext = {
   sessionId: string;
   userId: string;
@@ -67,6 +71,9 @@ function allowed(access: Access, auth: AuthContext): boolean {
   }
 }
 
+// Enforced in `preValidation`, not `preHandler`, so a refused request is turned away before the body
+// schema runs (its messages and refinements must not reach callers who may not use the route) and
+// before any route-level preValidation hook. Global hooks of a type run before route-level ones.
 async function enforce(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | void> {
   const access = request.routeOptions.config.access;
   if (!access) {
@@ -101,7 +108,7 @@ export const accessPlugin = fp(
       throw new Error(`Route ${describeMethod(route.method)} ${route.url} has no access rule`);
     });
 
-    app.addHook('preHandler', enforce);
+    app.addHook('preValidation', enforce);
   },
   { name: 'darling-access' },
 );

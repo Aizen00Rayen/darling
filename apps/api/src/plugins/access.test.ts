@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { PERMISSIONS, type Permission, type Role } from '@darling/shared';
 import { buildApp } from '../app';
 import { testDeps } from '../test-helpers';
@@ -366,6 +367,128 @@ describe('access plugin wiring', () => {
     });
     await app.inject({ method: 'GET', url: '/who' });
     expect(seen).toBeNull();
+    await app.close();
+  });
+});
+
+describe('access is enforced before body validation', () => {
+  const CSRF = { 'x-requested-with': 'fetch', origin: 'http://localhost:3000' };
+  const INVALID = { notTheField: 1 };
+
+  type Counters = { refine: number; preValidation: number; handler: number };
+
+  /** Protected POST routes whose body schema has a secret field name, a refine and a route-level hook. */
+  async function schemaApp(access: Access): Promise<{ app: FastifyInstance; counters: Counters }> {
+    const counters: Counters = { refine: 0, preValidation: 0, handler: 0 };
+    const body = z
+      .object({ secretField: z.string({ error: 'internal rule xyz' }) })
+      .refine(() => {
+        counters.refine += 1;
+        return true;
+      });
+    const app = await buildApp(testDeps(), {
+      extend: (instance) => {
+        instance.addHook('onRequest', async (req) => {
+          const name = req.headers[PRINCIPAL_HEADER];
+          req.auth = typeof name === 'string' ? (PRINCIPALS[name as PrincipalName] ?? null) : null;
+        });
+        instance.post(
+          '/guarded',
+          {
+            config: { access },
+            schema: { body },
+            preValidation: async () => {
+              counters.preValidation += 1;
+            },
+          },
+          async () => {
+            counters.handler += 1;
+            return { ok: true };
+          },
+        );
+      },
+    });
+    await app.ready();
+    return { app, counters };
+  }
+
+  const PROTECTED: Array<[string, Access, PrincipalName]> = [
+    ['owner', { kind: 'owner' }, 'affiliate'],
+    ['permission', { kind: 'permission', permission: 'orders.read' }, 'sub_manager'],
+    ['role', { kind: 'role', roles: ['super_manager'] }, 'affiliate'],
+  ];
+
+  it.each(PROTECTED)('anonymous + invalid body on a %s route -> 401, no field names', async (_n, access) => {
+    const { app } = await schemaApp(access);
+    const res = await app.inject({ method: 'POST', url: '/guarded', headers: CSRF, payload: INVALID });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ code: 'unauthenticated' });
+    expect(res.body).not.toContain('secretField');
+    expect(res.body).not.toContain('internal rule xyz');
+    await app.close();
+  });
+
+  it.each(PROTECTED)(
+    'forbidden caller + invalid body on a %s route -> 403, not 400',
+    async (_n, access, principal) => {
+      const { app } = await schemaApp(access);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/guarded',
+        headers: { ...CSRF, [PRINCIPAL_HEADER]: principal },
+        payload: INVALID,
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ code: 'forbidden' });
+      expect(res.body).not.toContain('secretField');
+      await app.close();
+    },
+  );
+
+  it('a refused request never runs the schema refine, a route-level preValidation hook or the handler', async () => {
+    const { app, counters } = await schemaApp({ kind: 'owner' });
+    for (const principal of [undefined, 'affiliate', 'super_manager_with_permission'] as const) {
+      await app.inject({
+        method: 'POST',
+        url: '/guarded',
+        headers: principal ? { ...CSRF, [PRINCIPAL_HEADER]: principal } : CSRF,
+        payload: { secretField: 'valid' },
+      });
+    }
+    expect(counters).toEqual({ refine: 0, preValidation: 0, handler: 0 });
+    // The counters are live: an authorised caller does run them.
+    const ok = await app.inject({
+      method: 'POST',
+      url: '/guarded',
+      headers: { ...CSRF, [PRINCIPAL_HEADER]: 'owner' },
+      payload: { secretField: 'valid' },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(counters.refine).toBe(1);
+    expect(counters.preValidation).toBe(1);
+    expect(counters.handler).toBe(1);
+    await app.close();
+  });
+
+  it('a public route with an invalid body still returns the normal 400 validation error', async () => {
+    const { app } = await schemaApp({ kind: 'public' });
+    const res = await app.inject({ method: 'POST', url: '/guarded', headers: CSRF, payload: INVALID });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: 'validation' });
+    await app.close();
+  });
+
+  it('an authorised caller with an invalid body still gets 400', async () => {
+    const { app, counters } = await schemaApp({ kind: 'owner' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/guarded',
+      headers: { ...CSRF, [PRINCIPAL_HEADER]: 'owner' },
+      payload: INVALID,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: 'validation' });
+    expect(counters.handler).toBe(0);
     await app.close();
   });
 });
