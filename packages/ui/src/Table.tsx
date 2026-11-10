@@ -5,7 +5,10 @@ export type TableColumn<T> = {
   key: string;
   header: string;
   render(row: T): ReactNode;
-  /** Hide the column (via CSS, the markup stays) below 700 px (`sm`) or below 1000 px (`md`). */
+  /**
+   * Hide the column (via CSS, the markup stays): `sm` below 700 px, `md` below 1000 px. In card mode
+   * (< 700 px) both are hidden, since 700 px is below 1000 px too.
+   */
   hideBelow?: 'sm' | 'md';
 };
 
@@ -26,21 +29,21 @@ export function Table<T>({ columns, rows, empty }: TableProps<T>) {
 
   return (
     <div className="dl-table-wrap glass">
-      <table className="dl-table">
-        <thead>
-          <tr>
+      <table className="dl-table" role="table">
+        <thead role="rowgroup">
+          <tr role="row">
             {columns.map((c) => (
-              <th key={c.key} scope="col" className={cx(hide(c))}>
+              <th key={c.key} scope="col" role="columnheader" className={cx(hide(c))}>
                 {c.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {rows.map((row, i) => (
-            <tr key={i}>
+            <tr key={i} role="row">
               {columns.map((c) => (
-                <td key={c.key} data-label={c.header} className={cx(hide(c))}>
+                <td key={c.key} role="cell" data-label={c.header} className={cx(hide(c))}>
                   {c.render(row)}
                 </td>
               ))}

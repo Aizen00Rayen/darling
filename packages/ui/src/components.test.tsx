@@ -47,6 +47,7 @@ describe('AppShell', () => {
     shell('/admin');
     const button = screen.getByRole('button', { name: /menu/i });
     expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(button).toHaveAccessibleName('Ouvrir le menu');
     expect(button).toHaveAttribute('aria-controls');
     const nav = document.getElementById(button.getAttribute('aria-controls')!);
     expect(nav).not.toBeNull();
@@ -54,6 +55,7 @@ describe('AppShell', () => {
 
     await user.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'true');
+    expect(button).toHaveAccessibleName('Fermer le menu');
     expect(nav).toHaveAttribute('data-open', 'true');
 
     await user.keyboard('{Escape}');
@@ -88,7 +90,8 @@ describe('AppShell', () => {
     shell('/admin');
     expect(screen.getByText('Amel B.')).toBeInTheDocument();
     expect(screen.getByText('Owner')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /log ?out|déconnexion|sign out/i })).toHaveAttribute('href', '/logout');
+    expect(screen.getByRole('navigation', { name: 'Navigation principale' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Se déconnecter/ })).toHaveAttribute('href', '/logout');
   });
 });
 
@@ -198,12 +201,26 @@ describe('Table', () => {
     expect(cells[1]).toHaveTextContent('a@x.dz');
   });
 
+  it('puts explicit table roles on every part (semantics survive display overrides)', () => {
+    render(<Table columns={columns} rows={rows} empty="none" />);
+    expect(document.querySelector('table')).toHaveAttribute('role', 'table');
+    expect(document.querySelector('thead')).toHaveAttribute('role', 'rowgroup');
+    expect(document.querySelector('tbody')).toHaveAttribute('role', 'rowgroup');
+    document.querySelectorAll('tr').forEach((tr) => expect(tr).toHaveAttribute('role', 'row'));
+    document.querySelectorAll('th').forEach((th) => expect(th).toHaveAttribute('role', 'columnheader'));
+    document.querySelectorAll('td').forEach((td) => expect(td).toHaveAttribute('role', 'cell'));
+    expect(document.querySelector('thead')).toBeInTheDocument();
+  });
+
   it('hides hideBelow columns with a class rather than removing them', () => {
     render(<Table columns={columns} rows={rows} empty="none" />);
     const header = screen.getByRole('columnheader', { name: 'Email' });
     expect(header.className).toMatch(/dl-hide-md/);
     expect(screen.getByRole('columnheader', { name: 'Name' }).className).not.toMatch(/dl-hide/);
     expect(screen.getAllByText(/@x\.dz/)).toHaveLength(2);
+    const cells = Array.from(document.querySelectorAll('td[data-label="Email"]'));
+    expect(cells).toHaveLength(2);
+    cells.forEach((td) => expect(td.className).toMatch(/dl-hide-md/));
   });
 });
 

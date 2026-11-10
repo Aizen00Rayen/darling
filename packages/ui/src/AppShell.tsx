@@ -67,6 +67,7 @@ export function AppShell({ brand = 'Darling', nav, currentPath, user, onLogoutHr
           className="dl-menu-btn"
           aria-expanded={open}
           aria-controls={navId}
+          aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
           onClick={() => setOpen((o) => !o)}
         >
           <span className="dl-menu-btn__bars" aria-hidden="true" />
@@ -78,7 +79,7 @@ export function AppShell({ brand = 'Darling', nav, currentPath, user, onLogoutHr
 
       <aside className="dl-sidebar" id={navId} data-open={open}>
         <span className="dl-brand dl-sidebar__brand">{brand}</span>
-        <nav aria-label="Main">
+        <nav aria-label="Navigation principale">
           <ul className="dl-nav">
             {nav.map((item) => (
               <li key={item.href}>
@@ -102,7 +103,7 @@ export function AppShell({ brand = 'Darling', nav, currentPath, user, onLogoutHr
           <span className="dl-user__name">{user.fullName}</span>
           <span className="dl-eyebrow">{user.roleLabel}</span>
           <a className="dl-user__logout" href={onLogoutHref}>
-            Sign out
+            Se déconnecter
           </a>
         </div>
       </aside>
