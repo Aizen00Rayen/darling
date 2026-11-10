@@ -740,7 +740,8 @@ describe('last owner invariant under concurrency (Review Focus 2)', () => {
         action(a.cookie, b.id, 'suspend'),
         action(b.cookie, a.id, 'suspend'),
       ]);
-      for (const res of results) expect([200, 204, 401, 409]).toContain(res.statusCode);
+      // 403: the in-transaction re-authorisation refuses an actor suspended or demoted by a racing request.
+      for (const res of results) expect([200, 204, 401, 403, 409]).toContain(res.statusCode);
       expect((await activeOwnerIds()).length).toBeGreaterThanOrEqual(1);
     }
   });
