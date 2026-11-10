@@ -1,11 +1,12 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useRef, useState, type FormEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { wilayas, type DeliveryMode } from '@/data/delivery';
 import type { Product } from '@/data/products';
 import { clampQuantity, deskAvailable, resolveMode, summary } from '@/lib/order-form-state';
-import { parseOrder, type FieldErrors } from '@/lib/order-schema';
+import { parseOrder, type FieldErrors, type OrderInput } from '@/lib/order-schema';
+import { hasHiddenErrors, submitOrder } from '@/lib/submit-order';
 import { ArrowIcon, AsteriskIcon } from './icons';
 
 const TIMEOUT_MS = 25_000;
@@ -16,11 +17,23 @@ const FAILURE_MESSAGE =
 
 export const ORDER_FORM_ID = 'commande';
 
+/** Fields that render their own error message. Errors on any other field fall back to the status line. */
+const SHOWN_FIELDS: readonly (keyof OrderInput)[] = [
+  'fullName',
+  'phone',
+  'wilayaCode',
+  'commune',
+  'mode',
+  'address',
+  'quantity',
+];
+
 type Props = { product: Product; shadeCode: string };
 
 export function OrderForm({ product, shadeCode }: Props) {
   const router = useRouter();
   const phoneRef = useRef<HTMLInputElement>(null);
+  const resetOnHide = useRef(false);
 
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -32,6 +45,25 @@ export function OrderForm({ product, shadeCode }: Props) {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  // Next keeps this page mounted (hidden) after navigating to /merci. Without a
+  // reset, coming back would show the sent order with a disabled submit button.
+  useLayoutEffect(() => {
+    return () => {
+      if (!resetOnHide.current) return;
+      resetOnHide.current = false;
+      setFullName('');
+      setPhone('');
+      setWilayaCode(null);
+      setCommune('');
+      setChosenMode('desk');
+      setAddress('');
+      setQuantity(1);
+      setErrors({});
+      setStatus(null);
+      setPending(false);
+    };
+  }, []);
 
   const mode = resolveMode(wilayaCode, chosenMode);
   const home = mode === 'home';
@@ -56,9 +88,12 @@ export function OrderForm({ product, shadeCode }: Props) {
       address: home ? address : undefined,
     });
     if (!parsed.ok) {
-      setErrors(parsed.errors);
-      if (parsed.errors.phone && phoneRef.current) {
-        phoneRef.current.setCustomValidity(parsed.errors.phone);
+      // The phone error is shown the way the live site shows it: as the
+      // browser's validation bubble on the field, not as inline text.
+      const { phone: phoneError, ...otherErrors } = parsed.errors;
+      setErrors(otherErrors);
+      if (phoneError && phoneRef.current) {
+        phoneRef.current.setCustomValidity(phoneError);
         phoneRef.current.reportValidity();
       }
       return;
@@ -67,30 +102,19 @@ export function OrderForm({ product, shadeCode }: Props) {
     setErrors({});
     setStatus('Envoi de votre commande…');
     setPending(true);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    try {
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(parsed.order),
-        signal: controller.signal,
-      });
-      const data = await response.json();
-      if (response.status === 400 && data?.errors && Object.keys(data.errors).length > 0) {
-        setErrors(data.errors);
-        setStatus(null);
-        setPending(false);
-        return;
-      }
-      if (!response.ok || !data?.ok) throw new Error('Submission failed');
+    const result = await submitOrder(parsed.order, { fetch: window.fetch.bind(window), timeoutMs: TIMEOUT_MS });
+    if (result.kind === 'ok') {
+      resetOnHide.current = true;
       router.push('/merci');
-    } catch (error) {
-      setStatus(error instanceof Error && error.name === 'AbortError' ? TIMEOUT_MESSAGE : FAILURE_MESSAGE);
-      setPending(false);
-    } finally {
-      clearTimeout(timeout);
+      return;
     }
+    if (result.kind === 'invalid') {
+      setErrors(result.errors);
+      setStatus(hasHiddenErrors(result.errors, SHOWN_FIELDS) ? FAILURE_MESSAGE : null);
+    } else {
+      setStatus(result.kind === 'timeout' ? TIMEOUT_MESSAGE : FAILURE_MESSAGE);
+    }
+    setPending(false);
   }
 
   return (
@@ -138,6 +162,7 @@ export function OrderForm({ product, shadeCode }: Props) {
               setPhone(e.target.value);
             }}
           />
+          {fieldError('phone')}
         </label>
         <label>
           Wilaya
