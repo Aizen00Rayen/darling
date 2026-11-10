@@ -1,43 +1,36 @@
 import Image from 'next/image';
+import type { Product } from '@/data/products';
 import { ArrowIcon } from './icons';
+import { Lines } from './Lines';
 
-export function LayeringSection() {
+export function LayeringSection({ layering }: { layering: Product['layering'] }) {
   return (
     <section className="editorial">
       <div className="editorial-image">
         <Image
-          src="/assets/texture.jpg"
-          alt="Le stylo Wet Kiss rose, présenté par le modèle de la campagne"
+          src={layering.image.src}
+          alt={layering.image.alt}
           width={1350}
           height={1350}
           sizes="(max-width: 700px) 100vw, 50vw"
         />
       </div>
       <div className="editorial-copy">
-        <p className="eyebrow">SOFT LIPS. STRONG FEELINGS.</p>
+        <p className="eyebrow">{layering.eyebrow}</p>
         <h2>
-          Un peu.
+          <Lines lines={layering.heading.lines} />
           <br />
-          Beaucoup.
-          <br />
-          <em>À la folie.</em>
+          <em>{layering.heading.accent}</em>
         </h2>
-        <p>
-          Un voile discret ou une couleur plus intense : superposez les passages et faites monter le gloss.
-        </p>
+        <p>{layering.body}</p>
         <a href="#commande" className="text-link">
-          TROUVER MA TEINTE{' '}
+          {layering.cta}{' '}
           <span>
             <ArrowIcon />
           </span>
         </a>
-        <Image
-          src="/assets/darling-logo.png"
-          alt=""
-          className="editorial-star"
-          width={240}
-          height={240}
-        />
+        {/* Width comes from CSS and height from the attribute, as on the live site. */}
+        <Image src="/assets/darling-logo.png" alt="" className="editorial-star" width={240} height={240} />
       </div>
     </section>
   );

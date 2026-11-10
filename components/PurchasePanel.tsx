@@ -5,6 +5,7 @@ import type { Product } from '@/data/products';
 import { formatMoney } from '@/lib/pricing';
 import { Gallery } from './Gallery';
 import { AsteriskIcon, HeartIcon } from './icons';
+import { Lines } from './Lines';
 import { MobileBuyBar } from './MobileBuyBar';
 import { ORDER_FORM_ID, OrderForm } from './OrderForm';
 import { ShadePicker } from './ShadePicker';
@@ -35,9 +36,16 @@ export function PurchasePanel({ product }: { product: Product }) {
 
   return (
     <section className="product" id="produit" ref={sectionRef}>
-      <Gallery name={product.name} slides={product.slides} index={slideIndex} onChange={setSlideIndex} />
+      <Gallery
+        name={product.name}
+        slides={product.slides}
+        photoLabel={product.photoLabel}
+        thumbsNote={product.thumbsNote}
+        index={slideIndex}
+        onChange={setSlideIndex}
+      />
       <div className="product-info">
-        <p className="eyebrow">LIP FONDUE · MADE IN KOREA</p>
+        <p className="eyebrow">{product.eyebrow}</p>
         <div className="title-line">
           <h1>
             {firstWord}
@@ -47,33 +55,24 @@ export function PurchasePanel({ product }: { product: Product }) {
               <AsteriskIcon />
             </sup>
           </h1>
-          <span className="vertical-note">YOUR LIPS, BUT GLOSSIER.</span>
+          <span className="vertical-note">{product.verticalNote}</span>
         </div>
         <div className="intro">
           <p>
-            La texture qui fond.
-            <br />
-            Le gloss qui fait craquer.
+            <Lines lines={product.tagline} />
           </p>
           <div className="price">
             {amount} <span>DA</span>
           </div>
         </div>
-        <p className="description">
-          Une touche de couleur, un éclat effet mouillé et des lèvres visiblement plus pulpeuses. Votre nouveau
-          crush, en un clic.
-        </p>
+        <p className="description">{product.description}</p>
         <ShadePicker shades={product.shades} index={shadeIndex} onChange={chooseShade} />
         <div className="perks">
-          <span>
-            <AsteriskIcon /> FINI GLOSSY
-          </span>
-          <span>
-            <HeartIcon /> VEGAN
-          </span>
-          <span>
-            <AsteriskIcon /> CRUELTY FREE
-          </span>
+          {product.perks.map((perk) => (
+            <span key={perk.label}>
+              {perk.icon === 'heart' ? <HeartIcon /> : <AsteriskIcon />} {perk.label}
+            </span>
+          ))}
         </div>
         <OrderForm product={product} shadeCode={shade.code} />
       </div>

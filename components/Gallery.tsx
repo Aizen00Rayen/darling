@@ -2,21 +2,26 @@ import Image from 'next/image';
 import type { Slide } from '@/data/products';
 import { wrapIndex } from '@/lib/order-form-state';
 import { LeftIcon, RightIcon } from './icons';
+import { Lines } from './Lines';
 
-/** Slides from this index on are shade renders, shown uncropped on a plain background. */
-const FIRST_UNCROPPED_SLIDE = 3;
-
-type Props = { name: string; slides: Slide[]; index: number; onChange: (index: number) => void };
+type Props = {
+  name: string;
+  slides: Slide[];
+  photoLabel: string[];
+  thumbsNote: string[];
+  index: number;
+  onChange: (index: number) => void;
+};
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-export function Gallery({ name, slides, index, onChange }: Props) {
+export function Gallery({ name, slides, photoLabel, thumbsNote, index, onChange }: Props) {
   const slide = slides[index];
   const go = (next: number) => onChange(wrapIndex(next, slides.length));
 
   return (
     <div className="gallery">
-      <div className={`hero-photo${index >= FIRST_UNCROPPED_SLIDE ? ' shade-photo' : ''}`}>
+      <div className={`hero-photo${slide.uncropped ? ' shade-photo' : ''}`}>
         <Image
           src={slide.src}
           alt={slide.alt}
@@ -27,9 +32,7 @@ export function Gallery({ name, slides, index, onChange }: Props) {
           fetchPriority="high"
         />
         <div className="photo-label glass">
-          THE GLOSS
-          <br />
-          YOU’LL FALL FOR.
+          <Lines lines={photoLabel} />
         </div>
         <div className="gallery-bottom">
           <span className="glass photo-counter">
@@ -59,9 +62,7 @@ export function Gallery({ name, slides, index, onChange }: Props) {
           </button>
         ))}
         <span>
-          UN SWIPE.
-          <br />
-          ET LE CRUSH.
+          <Lines lines={thumbsNote} />
         </span>
       </div>
     </div>

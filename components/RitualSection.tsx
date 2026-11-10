@@ -1,38 +1,29 @@
+import type { Product } from '@/data/products';
+import { Lines } from './Lines';
 import { ProductVideo } from './ProductVideo';
 
-export function RitualSection() {
+export function RitualSection({ ritual }: { ritual: Product['ritual'] }) {
   return (
     <section className="ritual" id="rituel">
       <div className="ritual-copy">
-        <p className="eyebrow">02 / VOTRE NOUVEAU RITUEL</p>
+        <p className="eyebrow">{ritual.eyebrow}</p>
         <h2>
-          CLICK.
+          <Lines lines={ritual.heading.lines} />
           <br />
-          GLIDE.
-          <br />
-          <em>KISS.</em>
+          <em>{ritual.heading.accent}</em>
         </h2>
         <ol>
-          <li>
-            <b>Un petit clic</b>
-            <p>Faites sortir seulement 1 à 2 mm de produit.</p>
-          </li>
-          <li>
-            <b>Un geste tout doux</b>
-            <p>
-              Appliquez directement sur les lèvres. Ajoutez un crayon à lèvres pour un contour plus intense.
-            </p>
-          </li>
+          {ritual.steps.map((step) => (
+            <li key={step.title}>
+              <b>{step.title}</b>
+              <p>{step.body}</p>
+            </li>
+          ))}
         </ol>
-        <p className="tip">Le stylo ne se rétracte pas : un peu de produit suffit à chaque application.</p>
+        <p className="tip">{ritual.tip}</p>
       </div>
       <div className="ritual-video">
-        <ProductVideo
-          desktop="/assets/application.mp4"
-          mobile="/assets/application-mobile.mp4"
-          poster="/assets/texture.jpg"
-          label="Vidéo originale : comment appliquer Wet Kiss"
-        />
+        <ProductVideo {...ritual.video} />
       </div>
     </section>
   );

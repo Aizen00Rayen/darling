@@ -1,21 +1,20 @@
 import { AsteriskIcon } from './icons';
 
-function Group() {
+function Group({ text }: { text: string }) {
   return (
     <span className="marquee-group">
-      WET LIPS. BIG CRUSH. <AsteriskIcon /> WET LIPS. BIG CRUSH. <AsteriskIcon /> WET LIPS. BIG CRUSH.{' '}
-      <AsteriskIcon />
+      {text} <AsteriskIcon /> {text} <AsteriskIcon /> {text} <AsteriskIcon />
     </span>
   );
 }
 
 /** Two identical groups keep the ticker seamless at every width. */
-export function Marquee() {
+export function Marquee({ text }: { text: string }) {
   return (
     <div className="marquee" aria-hidden="true">
       <div className="marquee-track">
-        <Group />
-        <Group />
+        <Group text={text} />
+        <Group text={text} />
       </div>
     </div>
   );

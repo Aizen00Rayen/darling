@@ -17,15 +17,15 @@ export function ProductPage({ product }: { product: Product }) {
         Aller au produit
       </a>
       <AnnouncementBar />
-      <Header />
+      <Header productName={product.name} />
       <main>
         <PurchasePanel product={product} />
-        <Marquee />
-        <EffectSection />
-        <LayeringSection />
-        <RitualSection />
+        <Marquee text={product.marquee} />
+        <EffectSection effect={product.effect} />
+        <LayeringSection layering={product.layering} />
+        <RitualSection ritual={product.ritual} />
         <Faq faqs={product.faqs} />
-        <FinalCta />
+        <FinalCta finalCta={product.finalCta} />
       </main>
       <Footer />
     </>

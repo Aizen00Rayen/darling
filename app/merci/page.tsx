@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowIcon, HeartIcon } from '@/components/icons';
+import { defaultProduct } from '@/data/products';
 
 export const metadata: Metadata = {
   title: 'Merci, Darling — Commande reçue',
@@ -24,7 +25,7 @@ export default function Merci() {
         </p>
         <p>Le paiement se fera à la livraison.</p>
         <Link href="/">
-          RETOUR À WET KISS <ArrowIcon />
+          RETOUR À {defaultProduct.name.toUpperCase()} <ArrowIcon />
         </Link>
       </main>
     </div>

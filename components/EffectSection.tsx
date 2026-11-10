@@ -1,43 +1,26 @@
+import type { Product } from '@/data/products';
+import { Lines } from './Lines';
 import { ProductVideo } from './ProductVideo';
 
-const benefits = [
-  { title: 'Un fini lumineux', body: 'Un éclat effet mouillé qui laisse les lèvres naturellement brillantes.' },
-  {
-    title: 'Une texture fondante',
-    body: 'La douceur d’une gelée, légère et confortable, sans sensation collante.',
-  },
-  {
-    title: 'Un effet repulpant',
-    body: 'Une formule au menthol pour des lèvres à l’apparence plus volumineuse.',
-  },
-];
-
-export function EffectSection() {
+export function EffectSection({ effect }: { effect: Product['effect'] }) {
   return (
     <section className="film-section" id="effet">
       <div className="section-heading">
-        <p className="eyebrow">01 / L’EFFET WET KISS</p>
+        <p className="eyebrow">{effect.eyebrow}</p>
         <h2>
-          GLOSS ON.
+          <Lines lines={effect.heading.lines} />
           <br />
-          <span>WORLD OFF.</span>
+          <span>{effect.heading.accent}</span>
         </h2>
         <p>
-          La brillance attire le regard.
-          <br />
-          La texture fait le reste.
+          <Lines lines={effect.intro} />
         </p>
       </div>
       <div className="film-frame">
-        <ProductVideo
-          desktop="/assets/finish.mp4"
-          mobile="/assets/finish-mobile.mp4"
-          poster="/assets/model.jpg"
-          label="Vidéo originale Wet Kiss : texture et fini glossy"
-        />
+        <ProductVideo {...effect.video} />
       </div>
       <div className="benefits">
-        {benefits.map((benefit, i) => (
+        {effect.benefits.map((benefit, i) => (
           <div key={benefit.title}>
             <span>{String(i + 1).padStart(2, '0')}</span>
             <h3>{benefit.title}</h3>

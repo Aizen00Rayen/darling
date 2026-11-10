@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import { ArrowIcon } from './icons';
 
-export function Header() {
+export function Header({ productName }: { productName: string }) {
   return (
     <header className="header">
       <a className="wordmark" href="#" aria-label="Darling, accueil">
@@ -9,7 +9,7 @@ export function Header() {
         <Image src="/assets/darling-logo.png" alt="" width={48} height={48} />
       </a>
       <nav aria-label="Navigation principale">
-        <a href="#produit">WET KISS</a>
+        <a href="#produit">{productName.toUpperCase()}</a>
         <a href="#effet">L’EFFET GLOSS</a>
         <a href="#rituel">LE RITUEL</a>
       </nav>
