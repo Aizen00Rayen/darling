@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://darling_app:darling_app@localhost:5433/darling
+      DATABASE_OWNER_URL: postgres://darling_owner:darling_owner@localhost:5433/darling
+      TEST_DATABASE_OWNER_URL: postgres://darling_owner:darling_owner@localhost:5433/postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Same script docker-compose mounts into /docker-entrypoint-initdb.d locally.
+      - name: Initialise Postgres roles and databases
+        run: psql -v ON_ERROR_STOP=1 -h localhost -p 5433 -U postgres -f infra/postgres/init.sql
+        env:
+          PGPASSWORD: postgres
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build

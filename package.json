@@ -11,6 +11,8 @@
     "test": "pnpm -r --if-present test",
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
-    "build": "pnpm -r --if-present build"
+    "build": "pnpm -r --if-present build",
+    "infra:up": "docker compose -p darling -f infra/docker-compose.yml up -d --wait",
+    "infra:down": "docker compose -p darling -f infra/docker-compose.yml down"
   }
 }
