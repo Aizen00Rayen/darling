@@ -1,6 +1,7 @@
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { ROLE_LABELS, type Role } from '@darling/shared';
 import type { AppDeps } from '../../app';
+import type { Config } from '../../config';
 import type { DbExecutor } from '../../db/client';
 import { authTokens, users } from '../../db/schema';
 import { hashToken, newToken } from '../../lib/crypto';
@@ -105,7 +106,8 @@ export async function peekToken(
 type MailDeps = Pick<AppDeps, 'db' | 'mailer' | 'config' | 'clock'>;
 type Recipient = { id: string; email: string; fullName: string; role: Role };
 
-function linkFor(deps: Pick<MailDeps, 'config'>, path: string, token: string): string {
+/** The absolute link a mailed token travels in. */
+export function linkFor(deps: { config: Pick<Config, 'appOrigin'> }, path: string, token: string): string {
   return `${deps.config.appOrigin}${path}?token=${token}`;
 }
 

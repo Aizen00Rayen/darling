@@ -15,7 +15,9 @@ import type { Config } from './config';
 import type { Db } from './db/client';
 import type { Clock } from './lib/clock';
 import type { Mailer } from './mail/mailer';
+import { auditRoutes } from './modules/audit/routes';
 import { authRoutes } from './modules/auth/routes';
+import { settingsRoutes } from './modules/settings/routes';
 import { userRoutes } from './modules/users/routes';
 import { accessPlugin } from './plugins/access';
 import { authPlugin } from './plugins/auth';
@@ -116,6 +118,8 @@ export async function buildApp(
 
   await app.register(authRoutes, deps);
   await app.register(userRoutes, deps);
+  await app.register(auditRoutes, deps);
+  await app.register(settingsRoutes, deps);
 
   await options.extend?.(app);
 
