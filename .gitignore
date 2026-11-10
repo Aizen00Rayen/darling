@@ -46,3 +46,8 @@ next-env.d.ts
 
 # superpowers scratch
 /.superpowers/
+
+# Playwright (apps/web)
+apps/web/e2e/.tmp/
+apps/web/playwright-report/
+apps/web/test-results/

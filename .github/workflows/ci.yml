@@ -46,3 +46,70 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  # Browser tests against real servers: needs Postgres, Mailpit and a Chromium. The suite creates and
+  # drops its own database (darling_e2e) and starts the API (4100) and the web app (3100) itself.
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      mailpit:
+        image: axllent/mailpit
+        ports:
+          - 1025:1025
+          - 8025:8025
+    env:
+      CI: true
+      NODE_ENV: development
+      API_PORT: 4000
+      APP_ORIGIN: http://localhost:3000
+      API_INTERNAL_URL: http://localhost:4000
+      DATABASE_URL: postgres://darling_app:darling_app@localhost:5433/darling
+      DATABASE_OWNER_URL: postgres://darling_owner:darling_owner@localhost:5433/darling
+      TEST_DATABASE_OWNER_URL: postgres://darling_owner:darling_owner@localhost:5433/postgres
+      COOKIE_SECURE: false
+      TRUST_PROXY: false
+      SMTP_URL: smtp://localhost:1025
+      MAIL_FROM: DARLING* <no-reply@darling7.store>
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Initialise Postgres roles and databases
+        run: psql -v ON_ERROR_STOP=1 -h localhost -p 5433 -U postgres -f infra/postgres/init.sql
+        env:
+          PGPASSWORD: postgres
+
+      # No .env in CI: random secrets for this run only, never printed.
+      - name: Generate secrets
+        run: |
+          echo "ENCRYPTION_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+          echo "TOKEN_PEPPER=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @darling/web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: apps/web/test-results
+          retention-days: 7

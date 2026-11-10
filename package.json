@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "pnpm -r --if-present dev",
     "test": "pnpm -r --if-present test",
+    "test:e2e": "pnpm --filter @darling/web exec playwright test",
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
     "build": "pnpm -r --if-present build",
