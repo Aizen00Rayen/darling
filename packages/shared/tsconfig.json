@@ -12,5 +12,5 @@
     "resolveJsonModule": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["src/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "scripts/*.d.mts", "vitest.config.ts"]
 }

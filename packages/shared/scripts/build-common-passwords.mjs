@@ -1,24 +1,30 @@
-// Generates src/common-passwords.ts from data/common-passwords.txt so the list
-// is bundled statically (no filesystem access at runtime, works in Node and Next).
-// Run with: pnpm --filter @darling/shared build:common-passwords
+// Builds the bundled common-password list (no filesystem access at runtime, works in Node and Next).
+//
+// Source: SecLists, Passwords/Common-Credentials/100k-most-used-passwords-NCSC.txt
+//   https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/100k-most-used-passwords-NCSC.txt
+// Filter: lower-case, keep entries of 10+ characters (shorter ones are already
+//   rejected by the length rule), de-duplicate, keep file order, first 5000.
+//   Hand-added extras (see EXTRA in common-passwords-lib.mjs) are appended when missing.
+//
+// Usage:
+//   node scripts/build-common-passwords.mjs <source.txt>   refresh data/common-passwords.txt from a downloaded source, then regenerate
+//   node scripts/build-common-passwords.mjs                regenerate src/common-passwords.ts from data/common-passwords.txt
+// (the source file is read as data only)
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { buildCommonPasswords, filterSource } from './common-passwords-lib.mjs';
 
-// Not in the first 1000 lines of SecLists 10k-most-common.txt, but trivially
-// guessable and the canonical "too common" example, so it is added explicitly.
-const EXTRA = ['password123'];
-
-const source = fileURLToPath(new URL('../data/common-passwords.txt', import.meta.url));
+const data = fileURLToPath(new URL('../data/common-passwords.txt', import.meta.url));
 const target = fileURLToPath(new URL('../src/common-passwords.ts', import.meta.url));
 
-const entries = [
-  ...new Set(
-    [...readFileSync(source, 'utf8').split('\n'), ...EXTRA]
-      .map((line) => line.trim().toLowerCase())
-      .filter((line) => line.length > 0),
-  ),
-];
+const sourcePath = process.argv[2];
+if (sourcePath) {
+  const lines = filterSource(readFileSync(sourcePath, 'utf8'));
+  writeFileSync(data, `${lines.join('\n')}\n`);
+  console.log(`Wrote ${lines.length} entries to ${data}`);
+}
 
+const entries = buildCommonPasswords(readFileSync(data, 'utf8'));
 const body = entries.map((entry) => `  ${JSON.stringify(entry)},`).join('\n');
 writeFileSync(
   target,
