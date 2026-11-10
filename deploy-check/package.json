@@ -1,0 +1,9 @@
+{
+  "name": "darling-deploy-check",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tiny app to check that SQLite works and its data file survives a redeploy on Hostinger Node.js hosting.",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=22" },
+  "optionalDependencies": { "better-sqlite3": "^12.0.0" }
+}
