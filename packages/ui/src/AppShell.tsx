@@ -11,7 +11,10 @@ export type AppShellProps = {
   nav: NavItem[];
   currentPath: string;
   user: { fullName: string; roleLabel: string };
-  onLogoutHref: string;
+  /** Plain link logout (a GET: prefer `logoutSlot` for anything that changes state). */
+  onLogoutHref?: string;
+  /** Rendered in place of the logout link, e.g. a button that POSTs; takes precedence over `onLogoutHref`. */
+  logoutSlot?: ReactNode;
   children: ReactNode;
 };
 
@@ -26,7 +29,7 @@ function bestMatch(nav: NavItem[], currentPath: string): string | null {
   return best;
 }
 
-export function AppShell({ brand = 'Darling', nav, currentPath, user, onLogoutHref, children }: AppShellProps) {
+export function AppShell({ brand = 'Darling', nav, currentPath, user, onLogoutHref, logoutSlot, children }: AppShellProps) {
   const navId = useId();
   const [open, setOpen] = useState(false);
   const [seenPath, setSeenPath] = useState(currentPath);
@@ -102,9 +105,12 @@ export function AppShell({ brand = 'Darling', nav, currentPath, user, onLogoutHr
         <div className="dl-user glass">
           <span className="dl-user__name">{user.fullName}</span>
           <span className="dl-eyebrow">{user.roleLabel}</span>
-          <a className="dl-user__logout" href={onLogoutHref}>
-            Se déconnecter
-          </a>
+          {logoutSlot ??
+            (onLogoutHref ? (
+              <a className="dl-user__logout" href={onLogoutHref}>
+                Se déconnecter
+              </a>
+            ) : null)}
         </div>
       </aside>
 

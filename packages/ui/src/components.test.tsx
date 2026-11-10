@@ -86,6 +86,31 @@ describe('AppShell', () => {
     expect(button).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('renders logoutSlot instead of the logout link, and a link is still used without it', () => {
+    render(
+      <AppShell
+        nav={nav}
+        currentPath="/admin"
+        user={{ fullName: 'Amel B.', roleLabel: 'Owner' }}
+        onLogoutHref="/logout"
+        logoutSlot={<button type="button">Quitter</button>}
+      >
+        <p>content</p>
+      </AppShell>,
+    );
+    expect(screen.getByRole('button', { name: 'Quitter' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Se déconnecter' })).not.toBeInTheDocument();
+  });
+
+  it('renders no logout control when neither logoutSlot nor onLogoutHref is given', () => {
+    render(
+      <AppShell nav={nav} currentPath="/admin" user={{ fullName: 'Amel B.', roleLabel: 'Owner' }}>
+        <p>content</p>
+      </AppShell>,
+    );
+    expect(screen.queryByText('Se déconnecter')).not.toBeInTheDocument();
+  });
+
   it('shows the user and a logout link', () => {
     shell('/admin');
     expect(screen.getByText('Amel B.')).toBeInTheDocument();
