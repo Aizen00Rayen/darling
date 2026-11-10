@@ -1,0 +1,4 @@
+/* Darling design tokens and shared visual primitives (moved verbatim from the storefront stylesheet). */
+:root{--pink:#ed007d;--paper:#fff6fa;--ink:#24141c;--line:#e8ccd9;--shade:#fdecdd}
+.glass{background:linear-gradient(135deg,#ffffff9e,#ffffff32 48%,#eadaff55);border:1px solid #fff9;box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 2px #fff7,0 8px 24px #7918540c;backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%)}
+.icon{display:inline-block;width:1em;height:1em;vertical-align:-.125em;flex-shrink:0;overflow:visible}

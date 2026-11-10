@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  transpilePackages: ["@darling/shared"],
+  transpilePackages: ["@darling/shared", "@darling/ui"],
   cacheComponents: true,
   partialPrefetching: true,
 };
