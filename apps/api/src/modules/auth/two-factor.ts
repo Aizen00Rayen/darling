@@ -25,7 +25,10 @@ import { recordAudit } from '../audit/service';
 import { getSetting } from '../settings/service';
 import { revokeUserSessions } from './sessions';
 
-/** Every route that checks a password or a code: 5 a minute, counted per user, not per address. */
+/**
+ * ONE budget for every route that checks the current password (2fa/enable, 2fa/disable,
+ * password/change): 5 requests a minute in total, counted per user, not per address.
+ */
 const VERIFICATIONS_PER_MINUTE = 5;
 
 const SAME_PASSWORD_MESSAGE = 'Le nouveau mot de passe doit être différent de l’ancien.';
@@ -108,24 +111,30 @@ export async function startTwoFactorSetup(
 }
 
 /**
- * Turns 2FA on when `code` matches the pending secret. The matched step is stored in the same
+ * Turns 2FA on when the current password is right and `code` matches the pending secret. The matched step is stored in the same
  * statement, so the code cannot also be used at login; the statement is guarded on the secret that
  * was verified, so a parallel setup or enable cannot make a different secret go live.
  */
 export async function enableTwoFactor(
   deps: Deps,
   actor: Actor,
-  code: string,
-): Promise<Outcome<'already_enabled' | 'no_pending_setup' | 'totp_invalid' | 'unauthenticated'>> {
+  input: { password: string; code: string },
+): Promise<
+  Outcome<'invalid_credentials' | 'already_enabled' | 'no_pending_setup' | 'totp_invalid' | 'unauthenticated'>
+> {
   const { db, clock } = deps;
   const now = clock();
   const user = await loadUser(db, actor.userId);
   if (!user) return { kind: 'unauthenticated' };
+
+  // Re-authentication comes first: a session cookie alone must not be able to enrol an authenticator.
+  if (!(await passwordMatches(user.passwordHash, input.password))) return { kind: 'invalid_credentials' };
+
   if (user.totpEnabled) return { kind: 'already_enabled' };
   if (user.totpSecretEnc === null) return { kind: 'no_pending_setup' };
 
   const secret = readSecret(user.totpSecretEnc, deps);
-  const step = secret === null ? null : verifyTotp(secret, code, now, user.totpLastStep);
+  const step = secret === null ? null : verifyTotp(secret, input.code, now, user.totpLastStep);
   if (step === null) return { kind: 'totp_invalid' };
 
   return db.transaction(async (tx) => {
@@ -273,15 +282,7 @@ function limitKey(request: FastifyRequest): string {
   return request.auth ? `user:${request.auth.userId}` : `ip:${request.ip}`;
 }
 
-const verifyingRoute = {
-  access: { kind: 'authenticated', allowDuring2faEnrollment: true },
-  rateLimit: {
-    max: VERIFICATIONS_PER_MINUTE,
-    timeWindow: '1 minute',
-    keyGenerator: limitKey,
-    errorResponseBuilder: tooManyAttempts,
-  },
-} as const;
+const verifyingRoute = { access: { kind: 'authenticated', allowDuring2faEnrollment: true } } as const;
 
 const setupResponse = z.object({ otpauthUrl: z.string(), secret: z.string() });
 const errorResponses = { 204: z.undefined(), 400: apiErrorSchema, 401: apiErrorSchema, 403: apiErrorSchema, 409: apiErrorSchema };
@@ -291,6 +292,15 @@ export async function accountSecurityRoutes(app: FastifyInstance, deps: AppDeps)
   const { config, db, clock } = deps;
   const typed = app.withTypeProvider<ZodTypeProvider>();
   const service: Deps = { config, db, clock };
+
+  // One limiter instance, so one store: the three routes below draw on the same per-user count.
+  // (A route-level `config.rateLimit` would give each route a store of its own.)
+  const verificationLimit = app.rateLimit({
+    max: VERIFICATIONS_PER_MINUTE,
+    timeWindow: '1 minute',
+    keyGenerator: limitKey,
+    errorResponseBuilder: tooManyAttempts,
+  });
 
   typed.post(
     '/api/auth/2fa/setup',
@@ -312,21 +322,31 @@ export async function accountSecurityRoutes(app: FastifyInstance, deps: AppDeps)
 
   typed.post(
     '/api/auth/2fa/enable',
-    { config: verifyingRoute, schema: { body: twoFactorEnableInput, response: errorResponses } },
+    {
+      config: verifyingRoute,
+      onRequest: verificationLimit,
+      schema: { body: twoFactorEnableInput, response: errorResponses },
+    },
     async (request, reply) => {
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: 'unauthenticated' });
-      const result = await enableTwoFactor(service, actor, request.body.code);
+      const result = await enableTwoFactor(service, actor, request.body);
       if (result.kind === 'ok') return reply.code(204).send();
       if (result.kind === 'already_enabled') return reply.code(409).send({ code: 'already_enabled' });
-      if (result.kind === 'unauthenticated') return reply.code(401).send({ code: 'unauthenticated' });
+      if (result.kind === 'invalid_credentials' || result.kind === 'unauthenticated') {
+        return reply.code(401).send({ code: result.kind });
+      }
       return reply.code(400).send({ code: result.kind });
     },
   );
 
   typed.post(
     '/api/auth/2fa/disable',
-    { config: verifyingRoute, schema: { body: twoFactorDisableInput, response: errorResponses } },
+    {
+      config: verifyingRoute,
+      onRequest: verificationLimit,
+      schema: { body: twoFactorDisableInput, response: errorResponses },
+    },
     async (request, reply) => {
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: 'unauthenticated' });
@@ -349,7 +369,11 @@ export async function accountSecurityRoutes(app: FastifyInstance, deps: AppDeps)
 
   typed.post(
     '/api/auth/password/change',
-    { config: verifyingRoute, schema: { body: changePasswordInput, response: errorResponses } },
+    {
+      config: verifyingRoute,
+      onRequest: verificationLimit,
+      schema: { body: changePasswordInput, response: errorResponses },
+    },
     async (request, reply) => {
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: 'unauthenticated' });

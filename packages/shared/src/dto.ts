@@ -103,7 +103,8 @@ export type InviteAcceptInput = z.infer<typeof inviteAcceptInput>;
 export const changePasswordInput = z.object({ currentPassword: passwordField, newPassword: passwordField });
 export type ChangePasswordInput = z.infer<typeof changePasswordInput>;
 
-export const twoFactorEnableInput = z.object({ code: sixDigitCode });
+/** Enabling needs the current password again: a stolen session cookie alone must not be able to enrol an authenticator. */
+export const twoFactorEnableInput = z.object({ password: passwordField, code: sixDigitCode });
 export type TwoFactorEnableInput = z.infer<typeof twoFactorEnableInput>;
 
 export const twoFactorDisableInput = z.object({ password: passwordField, code: sixDigitCode });

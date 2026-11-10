@@ -99,10 +99,13 @@ describe('password inputs', () => {
 });
 
 describe('two factor and forgot password inputs', () => {
-  it('enable needs a 6-digit code', () => {
-    expect(twoFactorEnableInput.parse({ code: '123456' })).toEqual({ code: '123456' });
-    expect(twoFactorEnableInput.safeParse({ code: '12345' }).success).toBe(false);
-    expect(twoFactorEnableInput.safeParse({ code: 'abcdef' }).success).toBe(false);
+  it('enable needs the current password and a 6-digit code', () => {
+    expect(twoFactorEnableInput.parse({ password: 'p', code: '123456' })).toEqual({ password: 'p', code: '123456' });
+    expect(twoFactorEnableInput.safeParse({ password: 'p', code: '12345' }).success).toBe(false);
+    expect(twoFactorEnableInput.safeParse({ password: 'p', code: 'abcdef' }).success).toBe(false);
+    expect(twoFactorEnableInput.safeParse({ code: '123456' }).success).toBe(false);
+    expect(twoFactorEnableInput.safeParse({ password: '', code: '123456' }).success).toBe(false);
+    expect(twoFactorEnableInput.safeParse({ password: 'x'.repeat(201), code: '123456' }).success).toBe(false);
   });
   it('disable needs password and code', () => {
     expect(twoFactorDisableInput.parse({ password: 'p', code: '123456' })).toEqual({ password: 'p', code: '123456' });

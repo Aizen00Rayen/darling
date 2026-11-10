@@ -1,7 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { auditLog, sessions, settings, users } from '../../db/schema';
-import { decryptSecret } from '../../lib/crypto';
+import { decryptSecret, verifyPassword } from '../../lib/crypto';
 import {
   createTestContext,
   csrfHeaders,
@@ -34,7 +34,8 @@ function post(path: string, cookie: string | undefined, payload?: Record<string,
 }
 
 const setup = (cookie?: string) => post('/api/auth/2fa/setup', cookie);
-const enable = (cookie: string | undefined, code: string) => post('/api/auth/2fa/enable', cookie, { code });
+const enable = (cookie: string | undefined, password: string, code: string) =>
+  post('/api/auth/2fa/enable', cookie, { password, code });
 const disable = (cookie: string | undefined, password: string, code: string) =>
   post('/api/auth/2fa/disable', cookie, { password, code });
 const changePassword = (cookie: string | undefined, currentPassword: string, newPassword: string) =>
@@ -87,8 +88,8 @@ describe('access', () => {
   it('answers 401 to an unauthenticated caller on every route, before looking at the body', async () => {
     expect((await setup()).statusCode).toBe(401);
     for (const res of [
-      await enable(undefined, '123456'),
-      await enable(undefined, 'not-a-code'),
+      await enable(undefined, 'x', '123456'),
+      await enable(undefined, 'x', 'not-a-code'),
       await disable(undefined, 'x', '123456'),
       await changePassword(undefined, 'x', 'y'),
     ]) {
@@ -105,7 +106,7 @@ describe('access', () => {
     expect(setupRes.statusCode).toBe(200);
     const secret = setupRes.json().secret as string;
 
-    const badEnable = await enable(cookie, wrongCode(secret, ctx.clock.now));
+    const badEnable = await enable(cookie, user.password, wrongCode(secret, ctx.clock.now));
     expect(badEnable.statusCode).toBe(400);
     expect(badEnable.json()).toEqual({ code: 'totp_invalid' });
 
@@ -140,7 +141,7 @@ describe('POST /api/auth/2fa/setup and /enable', () => {
     expect((await userRow(user.id)).totpEnabled).toBe(false);
     expect((await me(cookie)).json()).toMatchObject({ twoFactorEnabled: false, mustEnroll2fa: true });
 
-    const enabled = await enable(cookie, totpCodeAt(body.secret, ctx.clock.now));
+    const enabled = await enable(cookie, user.password, totpCodeAt(body.secret, ctx.clock.now));
     expect(enabled.statusCode).toBe(204);
     expect(enabled.body).toBe('');
 
@@ -168,12 +169,12 @@ describe('POST /api/auth/2fa/setup and /enable', () => {
     const second = (await setup(cookie)).json().secret as string;
     expect(second).not.toBe(first);
 
-    const stale = await enable(cookie, totpCodeAt(first, ctx.clock.now));
+    const stale = await enable(cookie, user.password, totpCodeAt(first, ctx.clock.now));
     expect(stale.statusCode).toBe(400);
     expect(stale.json()).toEqual({ code: 'totp_invalid' });
     expect((await userRow(user.id)).totpEnabled).toBe(false);
 
-    expect((await enable(cookie, totpCodeAt(second, ctx.clock.now))).statusCode).toBe(204);
+    expect((await enable(cookie, user.password, totpCodeAt(second, ctx.clock.now))).statusCode).toBe(204);
     expect((await userRow(user.id)).totpEnabled).toBe(true);
   });
 
@@ -181,7 +182,7 @@ describe('POST /api/auth/2fa/setup and /enable', () => {
     const { user, cookie } = await affiliate();
     const secret = (await setup(cookie)).json().secret as string;
     const code = totpCodeAt(secret, ctx.clock.now);
-    expect((await enable(cookie, code)).statusCode).toBe(204);
+    expect((await enable(cookie, user.password, code)).statusCode).toBe(204);
     const before = (await userRow(user.id)).totpSecretEnc;
 
     const again = await setup(cookie);
@@ -191,7 +192,7 @@ describe('POST /api/auth/2fa/setup and /enable', () => {
     expect((await userRow(user.id)).totpSecretEnc).toBe(before);
 
     // The same code twice: the second request finds 2FA already on.
-    const twice = await enable(cookie, code);
+    const twice = await enable(cookie, user.password, code);
     expect(twice.statusCode).toBe(409);
     expect(twice.json()).toEqual({ code: 'already_enabled' });
   });
@@ -199,7 +200,7 @@ describe('POST /api/auth/2fa/setup and /enable', () => {
   it('answers a wrong code with 400 totp_invalid and leaves 2FA off', async () => {
     const { user, cookie } = await affiliate();
     const secret = (await setup(cookie)).json().secret as string;
-    const res = await enable(cookie, wrongCode(secret, ctx.clock.now));
+    const res = await enable(cookie, user.password, wrongCode(secret, ctx.clock.now));
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ code: 'totp_invalid' });
     const row = await userRow(user.id);
@@ -208,7 +209,7 @@ describe('POST /api/auth/2fa/setup and /enable', () => {
     expect(await audits()).toHaveLength(0);
 
     // A malformed code is a validation error, and nothing is enabled either.
-    const malformed = await enable(cookie, '12ab');
+    const malformed = await enable(cookie, user.password, '12ab');
     expect(malformed.statusCode).toBe(400);
     expect(malformed.json().code).toBe('validation');
     expect((await userRow(user.id)).totpEnabled).toBe(false);
@@ -216,10 +217,62 @@ describe('POST /api/auth/2fa/setup and /enable', () => {
 
   it('answers 400 no_pending_setup when enable is called without a setup', async () => {
     const { user, cookie } = await affiliate();
-    const res = await enable(cookie, '123456');
+    const res = await enable(cookie, user.password, '123456');
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ code: 'no_pending_setup' });
     expect((await userRow(user.id)).totpEnabled).toBe(false);
+  });
+
+  it('needs the current password to enable: a wrong one is 401 and leaves 2FA off, a missing one is a validation error', async () => {
+    const { user, cookie } = await affiliate();
+    const secret = (await setup(cookie)).json().secret as string;
+    const code = totpCodeAt(secret, ctx.clock.now);
+
+    const wrong = await enable(cookie, WRONG, code);
+    expect(wrong.statusCode).toBe(401);
+    expect(wrong.json()).toEqual({ code: 'invalid_credentials' });
+    const row = await userRow(user.id);
+    expect(row.totpEnabled).toBe(false);
+    expect(row.totpLastStep).toBeNull();
+
+    const missing = await post('/api/auth/2fa/enable', cookie, { code });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json().code).toBe('validation');
+    expect(missing.json().errors.password).toEqual(expect.any(String));
+    expect((await userRow(user.id)).totpEnabled).toBe(false);
+
+    // The wrong attempts did not spend the code: right password and the same code work.
+    expect((await enable(cookie, user.password, code)).statusCode).toBe(204);
+    expect((await userRow(user.id)).totpEnabled).toBe(true);
+  });
+
+  it('does not let a stolen session take over enrolment: the victim can still log in without a code', async () => {
+    const victim = await seedUser(ctx, { role: 'affiliate' });
+    const stolen = await login(ctx, victim.email, victim.password);
+    // The thief stages their own authenticator and has its code, but not the password.
+    const attackerSecret = (await setup(stolen)).json().secret as string;
+    const attackerCode = totpCodeAt(attackerSecret, ctx.clock.now);
+    const attempt = await enable(stolen, WRONG, attackerCode);
+    expect(attempt.statusCode).toBe(401);
+    expect(attempt.json()).toEqual({ code: 'invalid_credentials' });
+
+    const row = await userRow(victim.id);
+    expect(row.totpEnabled).toBe(false);
+    expect(await audits()).toHaveLength(0);
+    // The victim logs in with the password alone.
+    await login(ctx, victim.email, victim.password);
+  });
+
+  it('only one of two parallel enables with the same password and code succeeds', async () => {
+    const { user, cookie } = await affiliate();
+    const secret = (await setup(cookie)).json().secret as string;
+    const code = totpCodeAt(secret, ctx.clock.now);
+    const results = await Promise.all([enable(cookie, user.password, code), enable(cookie, user.password, code)]);
+    const statuses = results.map((r) => r.statusCode).sort();
+    expect(statuses[0]).toBe(204);
+    expect([400, 409]).toContain(statuses[1]);
+    expect((await userRow(user.id)).totpEnabled).toBe(true);
+    expect((await audits()).filter((a) => a.action === 'auth.2fa_enabled')).toHaveLength(1);
   });
 
   it('keeps the enabling code from being replayed at login within its window, but accepts the next one', async () => {
@@ -227,7 +280,7 @@ describe('POST /api/auth/2fa/setup and /enable', () => {
     const cookie = await login(ctx, user.email, user.password);
     const secret = (await setup(cookie)).json().secret as string;
     const code = totpCodeAt(secret, ctx.clock.now);
-    expect((await enable(cookie, code)).statusCode).toBe(204);
+    expect((await enable(cookie, user.password, code)).statusCode).toBe(204);
 
     const attempt = (totpCode: string) =>
       post('/api/auth/login', undefined, { email: user.email, password: user.password, totpCode });
@@ -358,8 +411,12 @@ describe('POST /api/auth/2fa/disable', () => {
     ctx.clock.advance(STEP_MS);
     const code = totpCodeAt(secret, ctx.clock.now);
     const results = await Promise.all([disable(cookie, user.password, code), disable(cookie, user.password, code)]);
-    expect(results.map((r) => r.statusCode).sort()).toEqual([204, expect.any(Number)]);
+    const statuses = results.map((r) => r.statusCode).sort();
+    expect(statuses[0]).toBe(204);
+    // The loser is refused cleanly (not_enabled or a spent code), never an error.
+    expect([400, 409]).toContain(statuses[1]);
     expect((await audits()).filter((a) => a.action === 'auth.2fa_disabled')).toHaveLength(1);
+    expect((await userRow(user.id)).totpEnabled).toBe(false);
   });
 });
 
@@ -423,6 +480,28 @@ describe('POST /api/auth/password/change', () => {
     await login(ctx, user.email, NEW);
   });
 
+  it('only one of two parallel changes with the same current password wins, and its password is the one that stays', async () => {
+    const { user, cookie } = await affiliate();
+    const first = 'First-new-gloss-2027';
+    const second = 'Second-new-gloss-2027';
+    const results = await Promise.all([
+      changePassword(cookie, user.password, first),
+      changePassword(cookie, user.password, second),
+    ]);
+    const statuses = results.map((r) => r.statusCode).sort();
+    expect(statuses[0]).toBe(204);
+    expect([401, 409]).toContain(statuses[1]);
+    const winner = results[0]?.statusCode === 204 ? first : second;
+    const loser = winner === first ? second : first;
+
+    const hash = (await userRow(user.id)).passwordHash as string;
+    expect(await verifyPassword(hash, winner)).toBe(true);
+    expect(await verifyPassword(hash, loser)).toBe(false);
+    expect(await verifyPassword(hash, user.password)).toBe(false);
+    expect((await audits()).filter((a) => a.action === 'auth.password_changed')).toHaveLength(1);
+    await login(ctx, user.email, winner);
+  });
+
   it('stamps the revocation with the injected clock', async () => {
     const { user, cookie } = await affiliate();
     await login(ctx, user.email, user.password);
@@ -466,29 +545,48 @@ describe('rate limits (per authenticated user, not per address)', () => {
     expect(ok.statusCode).toBe(204);
   });
 
-  it('limits 2fa/enable and 2fa/disable the same way, each on its own count', async () => {
-    const a = await affiliate();
-    const secret = (await setup(a.cookie)).json().secret as string;
-    for (let i = 0; i < 5; i += 1) {
-      expect((await enable(a.cookie, wrongCode(secret, ctx.clock.now))).statusCode).toBe(400);
-    }
-    const limited = await enable(a.cookie, totpCodeAt(secret, ctx.clock.now));
-    expect(limited.statusCode).toBe(429);
-    expect(limited.json()).toEqual({ code: 'too_many_attempts' });
-    expect((await userRow(a.user.id)).totpEnabled).toBe(false);
-    // setup does not verify anything and is not limited by it.
-    expect((await setup(a.cookie)).statusCode).toBe(200);
-
-    const b = await affiliate({ totp: true });
-    const bSecret = b.user.totpSecret as string;
+  it('shares one budget of five across enable, disable and password/change', async () => {
+    const a = await affiliate({ totp: true });
+    const secret = a.user.totpSecret as string;
     ctx.clock.advance(STEP_MS);
-    for (let i = 0; i < 5; i += 1) {
-      expect((await disable(b.cookie, WRONG, totpCodeAt(bSecret, ctx.clock.now))).statusCode).toBe(401);
+    const code = totpCodeAt(secret, ctx.clock.now);
+    const NEW = 'Brand-new-gloss-2027';
+    const b = await affiliate();
+
+    // 2 + 2 + 1 requests, from different addresses, are all answered (and refused for their own reasons).
+    expect((await disable(a.cookie, WRONG, code)).statusCode).toBe(401);
+    expect((await changePassword(a.cookie, WRONG, NEW)).statusCode).toBe(401);
+    expect((await enable(a.cookie, WRONG, code)).statusCode).toBe(401);
+    expect((await disable(a.cookie, WRONG, code)).statusCode).toBe(401);
+    expect((await changePassword(a.cookie, WRONG, NEW)).statusCode).toBe(401);
+
+    // The sixth, on whichever of the three routes, is limited, even with the right credentials.
+    for (const limited of [
+      await disable(a.cookie, a.user.password, code),
+      await enable(a.cookie, a.user.password, code),
+      await changePassword(a.cookie, a.user.password, NEW),
+    ]) {
+      expect(limited.statusCode).toBe(429);
+      expect(limited.json()).toEqual({ code: 'too_many_attempts' });
+      expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+      expect(Number(limited.headers['retry-after'])).toBeLessThanOrEqual(60);
     }
-    const stopped = await disable(b.cookie, b.user.password, totpCodeAt(bSecret, ctx.clock.now));
-    expect(stopped.statusCode).toBe(429);
-    expect(stopped.json()).toEqual({ code: 'too_many_attempts' });
-    expect((await userRow(b.user.id)).totpEnabled).toBe(true);
+    expect((await userRow(a.user.id)).totpEnabled).toBe(true);
+    expect(await audits()).toHaveLength(0);
+
+    // setup and /me are not counted, and another user is not affected.
+    expect((await me(a.cookie)).statusCode).toBe(200);
+    expect((await changePassword(b.cookie, b.user.password, NEW)).statusCode).toBe(204);
+  });
+
+  it('does not count setup or /me against the budget', async () => {
+    const a = await affiliate();
+    for (let i = 0; i < 8; i += 1) {
+      expect((await setup(a.cookie)).statusCode).toBe(200);
+      expect((await me(a.cookie)).statusCode).toBe(200);
+    }
+    for (let i = 0; i < 5; i += 1) expect((await enable(a.cookie, WRONG, '123456')).statusCode).toBe(401);
+    expect((await enable(a.cookie, WRONG, '123456')).statusCode).toBe(429);
   });
 });
 
@@ -500,7 +598,7 @@ describe('audit and secrecy', () => {
 
     const secret = (await setup(cookie)).json().secret as string;
     const enableCode = totpCodeAt(secret, ctx.clock.now);
-    expect((await enable(cookie, enableCode)).statusCode).toBe(204);
+    expect((await enable(cookie, user.password, enableCode)).statusCode).toBe(204);
     expect((await changePassword(cookie, user.password, NEW)).statusCode).toBe(204);
     const hashAfter = (await userRow(user.id)).passwordHash as string;
     const enc = (await userRow(user.id)).totpSecretEnc as string;
@@ -531,15 +629,15 @@ describe('audit and secrecy', () => {
   });
 
   it('returns the secret only from setup: not from /me, not from errors, not from later calls', async () => {
-    const { cookie } = await affiliate();
+    const { user, cookie } = await affiliate();
     const setupRes = await setup(cookie);
     const secret = setupRes.json().secret as string;
     expect(setupRes.body).toContain(secret);
 
     const everything = [
       await me(cookie),
-      await enable(cookie, wrongCode(secret, ctx.clock.now)),
-      await enable(cookie, totpCodeAt(secret, ctx.clock.now)),
+      await enable(cookie, user.password, wrongCode(secret, ctx.clock.now)),
+      await enable(cookie, user.password, totpCodeAt(secret, ctx.clock.now)),
       await setup(cookie),
       await me(cookie),
     ];
