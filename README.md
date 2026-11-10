@@ -1,49 +1,52 @@
 # DARLING*
 
-The DARLING* platform: a public storefront (Wet Kiss lip gloss, cash on delivery, Algeria) and the back
-office around it. Today it contains the storefront, the authentication/authorization foundation and the
-admin, manager and affiliate portals.
+Storefront for Wet Kiss lip gloss (cash on delivery, Algeria) plus the back office around it: accounts,
+admin / manager / influenceuse portals, orders and commissions. One Next.js 16 app, SQLite for data.
+Launch design: [`docs/superpowers/specs/2026-11-11-lean-launch-design.md`](docs/superpowers/specs/2026-11-11-lean-launch-design.md),
+milestones: [`docs/superpowers/plans/2026-11-11-lean-launch.md`](docs/superpowers/plans/2026-11-11-lean-launch.md).
 
-## Workspace layout
+Status: storefront and portal screens are in place; the server (SQLite adapter, migrations, config, logger,
+client IP) is the foundation for the API routes that arrive in the next milestones, so the portal API calls
+return 404 for now.
 
-| Path | What |
-| --- | --- |
-| `apps/web` | Next.js 16 app: storefront (`/`), authentication pages and the portals (`/admin`, `/manager`, `/affiliate`, `/compte`); Playwright tests in `e2e/` |
-| `apps/api` | Fastify + Postgres API: sessions, 2FA, invitations, users, audit log, settings; CLI (`create-owner`) |
-| `packages/shared` | Roles, permissions and Zod schemas shared by the API and the web app |
-| `packages/ui` | React components and styles of the portals |
-| `infra` | `docker-compose.yml` (Postgres 17, Mailpit) and `postgres/init.sql` |
-| `docs` | [`foundation.md`](docs/foundation.md) developer guide, design specs and plans |
+## Run it
 
-## Quick start
+Needs Node 22 or newer.
 
 ```bash
-pnpm install
-pnpm infra:up
-cp .env.example .env     # fill ENCRYPTION_KEY and TOKEN_PEPPER with `openssl rand -base64 32`
-pnpm --filter @darling/api db:migrate
-pnpm --filter @darling/api create-owner --email you@example.com --name "Your Name"
-pnpm dev                 # web http://localhost:3000, API http://localhost:4000
+npm ci
+cp .env.example .env        # set ENCRYPTION_KEY: openssl rand -base64 32
+npm run dev                 # http://localhost:3000
 ```
-
-Requires Node 22 and pnpm 9 (Corepack). Details, environment variables and conventions are in
-[`docs/foundation.md`](docs/foundation.md).
-
-## Commands
 
 | Command | What |
 | --- | --- |
-| `pnpm dev` | Web (3000) and API (4000) in watch mode |
-| `pnpm test` | Unit and integration tests of every package (needs `pnpm infra:up`) |
-| `pnpm test:e2e` | Playwright end-to-end tests (own database and ports; needs Postgres and Mailpit) |
-| `pnpm lint` | ESLint |
-| `pnpm typecheck` | TypeScript |
-| `pnpm build` | Production builds |
-| `pnpm infra:up` / `pnpm infra:down` | Start / stop Postgres and Mailpit |
+| `npm test` | Vitest: storefront, shared rules, UI kit, server (SQLite, migrations, config, logger, IP) |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `next typegen` + `tsc --noEmit` |
+| `npm run build` / `npm start` | Production build / server (honours `PORT`) |
 
-## Documents
+Dev mail: `docker compose -p darling -f infra/docker-compose.yml up -d` starts Mailpit (SMTP 1025, inbox http://localhost:8025).
 
-- Developer guide: [`docs/foundation.md`](docs/foundation.md)
-- Platform design: [`docs/superpowers/specs/2026-11-10-darling-platform-master-design.md`](docs/superpowers/specs/2026-11-10-darling-platform-master-design.md)
-- Foundation plan: [`docs/superpowers/plans/2026-11-10-platform-foundation.md`](docs/superpowers/plans/2026-11-10-platform-foundation.md)
-- Storefront: [`apps/web/README.md`](apps/web/README.md)
+## Layout
+
+| Path | What |
+| --- | --- |
+| `app/`, `components/`, `lib/`, `data/`, `public/` | Storefront, auth pages and portals (`/admin`, `/manager`, `/affiliate`, `/compte`) |
+| `shared/` | Roles, permissions, DTO schemas, password and phone rules (imported as `@/shared`) |
+| `ui/` | Portal UI kit and styles (`@/ui`) |
+| `server/` | Server-only code: `db/` (SQLite adapter, migrations runner), `config.ts`, `log.ts`, `clock.ts`, `ids.ts`, `net/client-ip.ts`, `test/db.ts` |
+| `migrations/` | Plain SQL migrations (`NNNN_name.sql`), applied on first database use |
+| `deploy-check/` | Tiny separate app to verify SQLite persistence on Hostinger |
+| `infra/` | `docker-compose.yml` (Mailpit only) |
+| `reference/` | Snapshot of the live site used for the storefront port |
+| `docs/` | Specs, plans, [`foundation.md`](docs/foundation.md) (superseded Postgres architecture) |
+
+Storefront content lives in `data/products.ts`; the 58 wilayas and delivery rates in `data/delivery.ts`; totals and
+validation in `lib/pricing.ts` and `lib/order-schema.ts`. `app/api/orders/route.ts` is still an intake stub (stores nothing).
+
+## Database
+
+SQLite file `<DATA_DIR>/darling.sqlite` (default `./.data` in development, git-ignored; production must point `DATA_DIR`
+outside the app directory). `node:sqlite` is used when available, `better-sqlite3` otherwise. Node prints no warning for
+it because the adapter filters the one ExperimentalWarning. Timestamps are epoch milliseconds, JSON is stored as text.
