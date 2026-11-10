@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Button, Field, Notice } from '@darling/ui';
 import { emailSchema, homePathFor, meSchema } from '@darling/shared';
 import { api } from '@/lib/api/client';
+import { useHydrated } from '@/lib/auth/use-hydrated';
 import { safeNextPath } from '@/lib/auth/next-path';
 import { MESSAGES, messageForCode } from '@/lib/auth/messages';
 
@@ -23,6 +24,8 @@ export function LoginForm({ next, notice }: Props) {
   const [code, setCode] = useState('');
   const [step, setStep] = useState<'credentials' | 'code'>('credentials');
   const [busy, setBusy] = useState(false);
+  // A click before hydration would fall back to a native form submit: stay disabled until mounted.
+  const ready = useHydrated();
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; code?: string }>({});
 
@@ -104,7 +107,7 @@ export function LoginForm({ next, notice }: Props) {
       {notice === 'reset' ? <Notice tone="success">{MESSAGES.resetDone}</Notice> : null}
       {notice === 'invited' ? <Notice tone="success">{MESSAGES.inviteDone}</Notice> : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
-      <form className="auth-form" onSubmit={onSubmit} noValidate>
+      <form className="auth-form" method="post" onSubmit={onSubmit} noValidate>
         {step === 'credentials' ? (
           <>
             <Field label="Adresse e-mail" error={fieldErrors.email}>
@@ -150,7 +153,7 @@ export function LoginForm({ next, notice }: Props) {
             />
           </Field>
         )}
-        <Button type="submit" busy={busy}>
+        <Button type="submit" busy={busy} disabled={!ready}>
           {step === 'credentials' ? 'Se connecter' : 'Valider'}
         </Button>
       </form>

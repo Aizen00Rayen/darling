@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Button, Field, Notice } from '@darling/ui';
 import { PASSWORD_MIN_LENGTH, passwordProblem } from '@darling/shared';
 import { api } from '@/lib/api/client';
+import { useHydrated } from '@/lib/auth/use-hydrated';
 import { InvalidLink } from './InvalidLink';
 import { MESSAGES, messageForCode } from '@/lib/auth/messages';
 
@@ -25,6 +26,8 @@ export function SetPasswordForm({ mode, token, username, title, lead }: Props) {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
+  // A click before hydration would fall back to a native form submit: stay disabled until mounted.
+  const ready = useHydrated();
   const [invalid, setInvalid] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<{ password?: string; confirm?: string }>({});
@@ -73,7 +76,7 @@ export function SetPasswordForm({ mode, token, username, title, lead }: Props) {
       <h1 className="auth-title">{title}</h1>
       {lead ? <p className="auth-lead">{lead}</p> : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
-      <form className="auth-form" onSubmit={onSubmit} noValidate>
+      <form className="auth-form" method="post" onSubmit={onSubmit} noValidate>
         {username ? (
           <input type="text" className="auth-sr-only" name="username" autoComplete="username" value={username} readOnly tabIndex={-1} aria-hidden="true" />
         ) : null}
@@ -97,7 +100,7 @@ export function SetPasswordForm({ mode, token, username, title, lead }: Props) {
             onChange={(e) => setConfirm(e.target.value)}
           />
         </Field>
-        <Button type="submit" busy={busy}>
+        <Button type="submit" busy={busy} disabled={!ready}>
           {mode === 'reset' ? 'Mettre à jour' : 'Activer mon compte'}
         </Button>
       </form>
