@@ -4,6 +4,7 @@ import { buildApp, type AppDeps } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
 import { systemClock } from './lib/clock';
+import { smtpMailer } from './mail/mailer';
 
 // Resolve relative to this file, not the cwd, so `pnpm --filter` and root runs agree.
 dotenv.config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)), quiet: true });
@@ -13,15 +14,10 @@ async function main() {
 
   const { db, close: closeDb } = createDb(config.databaseUrl);
 
-  // The mailer is a placeholder until Task 6 provides the real one.
   const deps: AppDeps = {
     config,
     db,
-    mailer: {
-      send: () => {
-        throw new Error('mailer not configured until Task 6');
-      },
-    },
+    mailer: smtpMailer(config.smtpUrl, config.mailFrom),
     clock: systemClock,
   };
 

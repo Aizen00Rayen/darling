@@ -15,13 +15,22 @@ import type { Config } from './config';
 import type { Db } from './db/client';
 import type { Clock } from './lib/clock';
 import type { Mailer } from './mail/mailer';
+import { accessPlugin } from './plugins/access';
+import { csrfPlugin } from './plugins/csrf';
 import { registerErrorHandling } from './plugins/errors';
 import { loggerOptions } from './plugins/logging';
 
 export type { Config } from './config';
 export type { Clock } from './lib/clock';
 export type AppDeps = { config: Config; db: Db; mailer: Mailer; clock: Clock };
-export type BuildAppOptions = { logStream?: Writable };
+export type BuildAppOptions = {
+  logStream?: Writable;
+  /**
+   * Called once the shared plugins are in place, so probe routes and hooks registered here are
+   * subject to the access and CSRF plugins exactly like production routes. Used by tests.
+   */
+  extend?: (app: FastifyInstance) => void | Promise<void>;
+};
 
 const REQUEST_ID_HEADER = 'x-request-id';
 const VALID_REQUEST_ID = /^[A-Za-z0-9_-]{8,64}$/;
@@ -66,12 +75,15 @@ export async function buildApp(
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
 
+  // Both are non-encapsulated and must come before any route so their hooks cover every route.
+  await app.register(csrfPlugin, { appOrigin: config.appOrigin });
+  await app.register(accessPlugin);
+
   registerErrorHandling(app);
 
   app.withTypeProvider<ZodTypeProvider>().get(
     '/api/health',
     {
-      // The access plugin arrives in Task 6; until then this is just carried on the route.
       config: { access: { kind: 'public' } },
       schema: { response: { 200: healthResponse, 503: healthResponse } },
     },
@@ -96,6 +108,8 @@ export async function buildApp(
       }
     },
   );
+
+  await options.extend?.(app);
 
   return app;
 }

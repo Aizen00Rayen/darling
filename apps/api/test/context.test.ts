@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { userPermissions, users } from '../src/db/schema';
+import { verifyPassword } from '../src/lib/crypto';
 import { connectAsOwner, createTestClock, createTestContext, login, seedUser } from './context';
 
 describe('test harness', () => {
@@ -42,6 +43,16 @@ describe('test harness', () => {
       expect(row?.status).toBe('active');
       const perms = await ctx.db.select().from(userPermissions).where(eq(userPermissions.userId, sub.id));
       expect(perms.map((p) => p.permission).sort()).toEqual(['orders.read', 'orders.write']);
+      expect(owner.password).toBe('Rose-gloss-2026');
+      expect(row?.passwordHash).toMatch(/^\$argon2id\$/);
+      expect(await verifyPassword(row?.passwordHash ?? '', owner.password)).toBe(true);
+      const custom = await seedUser(ctx, { role: 'affiliate', password: 'Other-gloss-2026' });
+      const [customRow] = await ctx.db.select().from(users).where(eq(users.id, custom.id));
+      expect(await verifyPassword(customRow?.passwordHash ?? '', 'Other-gloss-2026')).toBe(true);
+      expect(await verifyPassword(customRow?.passwordHash ?? '', 'Rose-gloss-2026')).toBe(false);
+      await expect(seedUser(ctx, { role: 'affiliate', totp: true })).rejects.toThrow(
+        'seedUser({ totp: true }) is available from Task 7',
+      );
       await expect(login(ctx, owner.email, owner.password)).rejects.toThrow('login() is available from Task 7');
     } finally {
       await ctx.close();

@@ -5,6 +5,9 @@ import { buildApp } from './app';
 import { LOG_REDACT_PATHS } from './plugins/logging';
 import { fakeDb, testConfig, testDeps } from './test-helpers';
 
+const PUBLIC = { config: { access: { kind: 'public' as const } } };
+const CSRF_HEADERS = { 'x-requested-with': 'fetch', origin: 'http://localhost:3000' };
+
 function captureStream() {
   const lines: string[] = [];
   const stream = new Writable({
@@ -108,11 +111,11 @@ describe('security plugins', () => {
 
   it('registers @fastify/cookie', async () => {
     const app = await buildApp(testDeps());
-    app.get('/t/cookie', async (_req, reply) => {
+    app.get('/t/cookie', PUBLIC, async (_req, reply) => {
       reply.setCookie('probe', '1', { httpOnly: true, path: '/' });
       return { ok: true };
     });
-    app.get('/t/read-cookie', async (req) => ({ probe: req.cookies.probe ?? null }));
+    app.get('/t/read-cookie', PUBLIC, async (req) => ({ probe: req.cookies.probe ?? null }));
     const set = await app.inject({ method: 'GET', url: '/t/cookie' });
     expect(String(set.headers['set-cookie'])).toContain('probe=1');
     const read = await app.inject({
@@ -126,10 +129,14 @@ describe('security plugins', () => {
 
   it('registers rate limiting with global off and per-route opt-in', async () => {
     const app = await buildApp(testDeps());
-    app.get('/t/open', async () => ({ ok: true }));
-    app.get('/t/limited', { config: { rateLimit: { max: 1, timeWindow: '1 minute' } } }, async () => ({
-      ok: true,
-    }));
+    app.get('/t/open', PUBLIC, async () => ({ ok: true }));
+    app.get(
+      '/t/limited',
+      { config: { access: { kind: 'public' }, rateLimit: { max: 1, timeWindow: '1 minute' } } },
+      async () => ({
+        ok: true,
+      }),
+    );
     for (let i = 0; i < 5; i += 1) {
       expect((await app.inject({ method: 'GET', url: '/t/open' })).statusCode).toBe(200);
     }
@@ -156,6 +163,7 @@ describe('error handling', () => {
     app.post(
       '/t/validate',
       {
+        ...PUBLIC,
         schema: {
           body: z.object({
             email: z.string().email('Enter a valid email').min(50, 'Too short'),
@@ -169,6 +177,7 @@ describe('error handling', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/t/validate',
+      headers: CSRF_HEADERS,
       payload: { email: 'nope', age: 'x', address: { city: '' } },
     });
     expect(res.statusCode).toBe(400);
@@ -185,11 +194,11 @@ describe('error handling', () => {
 
   it('maps malformed JSON to a 400 without leaking parser details', async () => {
     const app = await buildApp(testDeps());
-    app.post('/t/json', async () => ({ ok: true }));
+    app.post('/t/json', PUBLIC, async () => ({ ok: true }));
     const res = await app.inject({
       method: 'POST',
       url: '/t/json',
-      headers: { 'content-type': 'application/json' },
+      headers: { ...CSRF_HEADERS, 'content-type': 'application/json' },
       payload: '{"a":',
     });
     expect(res.statusCode).toBe(400);
@@ -200,7 +209,7 @@ describe('error handling', () => {
   it('maps unexpected errors to 500 { code: "internal" } and logs them with the request id', async () => {
     const { stream, records } = captureStream();
     const app = await buildApp(testDeps(), { logStream: stream });
-    app.get('/t/boom', async () => {
+    app.get('/t/boom', PUBLIC, async () => {
       throw new Error('kaboom secret detail');
     });
     const res = await app.inject({
@@ -223,7 +232,7 @@ describe('error handling', () => {
     const app = await buildApp(testDeps());
     app.get(
       '/t/bad-response',
-      { schema: { response: { 200: z.object({ n: z.number() }) } } },
+      { ...PUBLIC, schema: { response: { 200: z.object({ n: z.number() }) } } },
       async () => ({ n: 'not a number' as unknown as number }),
     );
     const res = await app.inject({ method: 'GET', url: '/t/bad-response' });
@@ -250,14 +259,14 @@ describe('logging', () => {
   it('censors sensitive fields in log lines', async () => {
     const { stream, records } = captureStream();
     const app = await buildApp(testDeps({ config: testConfig() }), { logStream: stream });
-    app.post('/t/log', async (req) => {
+    app.post('/t/log', PUBLIC, async (req) => {
       req.log.info(
         { password: 'hunter2-pw', token: 'tok-123', body: { newPassword: 'np-456', currentPassword: 'cp-789' } },
         'probe',
       );
       return { ok: true };
     });
-    await app.inject({ method: 'POST', url: '/t/log', payload: {} });
+    await app.inject({ method: 'POST', url: '/t/log', headers: CSRF_HEADERS, payload: {} });
     const raw = JSON.stringify(records());
     expect(raw).toContain('probe');
     for (const secret of ['hunter2-pw', 'tok-123', 'np-456', 'cp-789']) {

@@ -6,11 +6,10 @@ import type { Permission, Role, UserStatus } from '@darling/shared';
 import { buildApp, type Clock } from '../src/app';
 import { createDb, type Db } from '../src/db/client';
 import { userPermissions, users } from '../src/db/schema';
-import type { Mail, Mailer } from '../src/mail/mailer';
+import { hashPassword } from '../src/lib/crypto';
+import { memoryMailer, type MemoryMailer } from '../src/mail/mailer';
 import { testConfig } from '../src/test-helpers';
 import { ownerAdminUrl, requireEnv, TEMPLATE_DB, withDatabase } from './env';
-
-export type MemoryMailer = Mailer & { sent: Mail[] };
 
 export type TestClock = Clock & {
   /** The instant the clock currently reports; assignable. */
@@ -28,16 +27,6 @@ export type TestContext = {
   databaseName: string;
   close(): Promise<void>;
 };
-
-export function createMemoryMailer(): MemoryMailer {
-  const sent: Mail[] = [];
-  return {
-    sent,
-    async send(mail) {
-      sent.push(mail);
-    },
-  };
-}
 
 export function createTestClock(start: Date = new Date('2026-01-01T00:00:00.000Z')): TestClock {
   let current = new Date(start);
@@ -80,7 +69,7 @@ export async function createTestContext(): Promise<TestContext> {
   const appUrl = withDatabase(requireEnv('DATABASE_URL'), databaseName);
   const ownerUrl = withDatabase(ownerAdminUrl(), databaseName);
   const { db, close: closeDb } = createDb(appUrl);
-  const mailer = createMemoryMailer();
+  const mailer = memoryMailer();
   const clock = createTestClock();
 
   const app = await buildApp({
@@ -121,7 +110,7 @@ export type SeedUserInput = {
 
 export type SeededUser = { id: string; email: string; password: string; totpSecret?: string };
 
-const DEFAULT_PASSWORD = 'correct-horse-battery-staple-42';
+const DEFAULT_PASSWORD = 'Rose-gloss-2026';
 
 /** Inserts a user (and permissions) straight into the database. */
 export async function seedUser(ctx: TestContext, input: SeedUserInput): Promise<SeededUser> {
@@ -132,8 +121,7 @@ export async function seedUser(ctx: TestContext, input: SeedUserInput): Promise<
   await ctx.db.insert(users).values({
     id,
     email,
-    // Task 6 replaces the placeholder with an argon2id hash of `password`.
-    passwordHash: 'placeholder-hash-until-task-6',
+    passwordHash: await hashPassword(password),
     fullName: 'Test User',
     role: input.role,
     status: input.status ?? 'active',
