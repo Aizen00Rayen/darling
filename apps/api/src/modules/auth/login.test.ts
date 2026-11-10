@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PERMISSIONS } from '@darling/shared';
 import { auditLog, loginEvents, sessions, settings, users } from '../../db/schema';
 import { hashToken } from '../../lib/crypto';
+import { attemptLogin, type LoginAttempt } from './login';
 import {
   createTestContext,
   csrfHeaders,
@@ -498,5 +499,190 @@ describe('POST /api/auth/login: session cookie attributes', () => {
     expect(cleared).toEqual(expect.arrayContaining(['httponly', 'samesite=lax', 'path=/', 'max-age=0']));
     expect(cleared.includes('secure')).toBe(secure);
     expect(cleared.some((a) => a.startsWith('expires=thu, 01 jan 1970'))).toBe(true);
+  });
+});
+
+describe('POST /api/auth/login: attempts are reserved atomically', () => {
+  const reasons = async () => (await events()).map((e) => e.reason);
+  const count = async (reason: string) => (await reasons()).filter((r) => r === reason).length;
+
+  it('lets at most ten of forty parallel wrong passwords be checked, then refuses the right one', async () => {
+    const aff = await seedUser(ctx, { role: 'affiliate' });
+    const burst = await Promise.all(
+      Array.from({ length: 40 }, () => post({ email: aff.email, password: WRONG })),
+    );
+    for (const res of burst) {
+      expect(res.statusCode).toBe(401);
+      expect(res.body).toBe('{"code":"invalid_credentials"}');
+    }
+    expect(await count('bad_password')).toBe(10);
+    expect(await count('locked')).toBe(30);
+    const locked = await userRow(aff.id);
+    expect(locked.failedLogins).toBe(10);
+    expect(locked.lockedUntil?.getTime()).toBe(ctx.clock.now.getTime() + 15 * 60_000);
+
+    const right = await post({ email: aff.email, password: aff.password });
+    expect(right.statusCode).toBe(401);
+    expect(right.body).toBe('{"code":"invalid_credentials"}');
+    expect(right.headers['set-cookie']).toBeUndefined();
+    expect(await ctx.db.select().from(sessions)).toHaveLength(0);
+    const still = await userRow(aff.id);
+    expect(still.failedLogins).toBe(10);
+    expect(still.lockedUntil?.getTime()).toBe(locked.lockedUntil?.getTime());
+
+    ctx.clock.advance(15 * 60_000);
+    expect((await post({ email: aff.email, password: aff.password })).statusCode).toBe(200);
+    expect((await userRow(aff.id)).failedLogins).toBe(0);
+  });
+
+  it('bounds a burst that includes the right password, and never loses a lock to it', async () => {
+    const aff = await seedUser(ctx, { role: 'affiliate' });
+    const results = await Promise.all([
+      ...Array.from({ length: 40 }, () => post({ email: aff.email, password: WRONG })),
+      post({ email: aff.email, password: aff.password }),
+    ]);
+    const ok = await count('ok');
+    expect(results.filter((r) => r.statusCode === 200)).toHaveLength(ok);
+    expect(ok).toBeLessThanOrEqual(1);
+    expect((await events()).length).toBe(41);
+    // Every success reopens a window of ten checks; without one the cap is ten in total.
+    expect(await count('bad_password')).toBeLessThanOrEqual(10 * (ok + 1));
+    const row = await userRow(aff.id);
+    if (ok === 0) {
+      expect(row.lockedUntil).not.toBeNull();
+      expect(row.failedLogins).toBe(10);
+    }
+  });
+
+  it('after a success the counter is clear, and a later burst gets a fresh window of ten', async () => {
+    const aff = await seedUser(ctx, { role: 'affiliate' });
+    for (let i = 0; i < 4; i += 1) await post({ email: aff.email, password: WRONG });
+    expect((await post({ email: aff.email, password: aff.password })).statusCode).toBe(200);
+    const row = await userRow(aff.id);
+    expect(row.failedLogins).toBe(0);
+    expect(row.lockedUntil).toBeNull();
+    await Promise.all(Array.from({ length: 25 }, () => post({ email: aff.email, password: WRONG })));
+    expect(await count('bad_password')).toBe(4 + 10);
+    expect((await userRow(aff.id)).lockedUntil).not.toBeNull();
+  });
+
+  it('never locks an account by repeating the right password without a code', async () => {
+    const user = await seedUser(ctx, { role: 'affiliate', totp: true });
+    for (let i = 0; i < 12; i += 1) {
+      const res = await post({ email: user.email, password: user.password });
+      expect(res.json()).toEqual({ code: 'totp_required' });
+      const row = await userRow(user.id);
+      expect(row.failedLogins).toBe(0);
+      expect(row.lockedUntil).toBeNull();
+    }
+    expect(await count('totp_required')).toBe(12);
+    const code = totpCodeAt(user.totpSecret as string, ctx.clock.now);
+    expect((await post({ email: user.email, password: user.password, totpCode: code })).statusCode).toBe(200);
+  });
+
+  it('releases a missing-code reservation even when it was the tenth attempt', async () => {
+    const user = await seedUser(ctx, { role: 'affiliate', totp: true });
+    const valid = totpCodeAt(user.totpSecret as string, ctx.clock.now);
+    const wrong = String((Number(valid) + 1) % 1_000_000).padStart(6, '0');
+    for (let i = 0; i < 9; i += 1) {
+      await post({ email: user.email, password: user.password, totpCode: wrong });
+    }
+    expect((await userRow(user.id)).failedLogins).toBe(9);
+    const res = await post({ email: user.email, password: user.password });
+    expect(res.json()).toEqual({ code: 'totp_required' });
+    const row = await userRow(user.id);
+    expect(row.failedLogins).toBe(9);
+    expect(row.lockedUntil).toBeNull();
+    expect((await post({ email: user.email, password: user.password, totpCode: valid })).statusCode).toBe(200);
+  });
+
+  it('locks after ten wrong codes given with the right password', async () => {
+    const user = await seedUser(ctx, { role: 'affiliate', totp: true });
+    const valid = totpCodeAt(user.totpSecret as string, ctx.clock.now);
+    const wrong = String((Number(valid) + 1) % 1_000_000).padStart(6, '0');
+    for (let i = 0; i < 10; i += 1) {
+      const res = await post({ email: user.email, password: user.password, totpCode: wrong });
+      expect(res.json()).toEqual({ code: 'totp_invalid' });
+    }
+    expect(await count('totp_invalid')).toBe(10);
+    const row = await userRow(user.id);
+    expect(row.failedLogins).toBe(10);
+    expect(row.lockedUntil).not.toBeNull();
+    const refused = await post({ email: user.email, password: user.password, totpCode: valid });
+    expect(refused.json()).toEqual({ code: 'invalid_credentials' });
+    expect(refused.headers['set-cookie']).toBeUndefined();
+  });
+
+  // A lock that lands while the password is being verified must win over that attempt. The
+  // `onVerified` seam runs right after the password check, so the test can lock the account at
+  // exactly that moment instead of hoping a race happens.
+  describe('a lock that lands during verification', () => {
+    function attempt(overrides: Partial<LoginAttempt> & Pick<LoginAttempt, 'email' | 'password'>): LoginAttempt {
+      return {
+        remember: false,
+        totpCode: undefined,
+        ip: '203.0.113.50',
+        userAgent: 'Vitest/1',
+        presentedSessionId: undefined,
+        ...overrides,
+      };
+    }
+    const lockDuringVerify = (id: string) => async () => {
+      await ctx.db
+        .update(users)
+        .set({ failedLogins: 10, lockedUntil: new Date(ctx.clock.now.getTime() + 15 * 60_000) })
+        .where(eq(users.id, id));
+    };
+
+    it('refuses the right password, creates no session and leaves the counters alone', async () => {
+      const aff = await seedUser(ctx, { role: 'affiliate' });
+      const outcome = await attemptLogin(
+        { db: ctx.db, config: ctx.config, clock: ctx.clock, onVerified: lockDuringVerify(aff.id) },
+        attempt({ email: aff.email, password: aff.password }),
+      );
+      expect(outcome).toEqual({ kind: 'invalid_credentials' });
+      expect(await ctx.db.select().from(sessions)).toHaveLength(0);
+      const row = await userRow(aff.id);
+      expect(row.failedLogins).toBe(10);
+      expect(row.lockedUntil?.getTime()).toBe(ctx.clock.now.getTime() + 15 * 60_000);
+      expect(row.lastLoginAt).toBeNull();
+      expect(await reasons()).toEqual(['locked']);
+    });
+
+    it('does the same for a valid code, and does not spend the code', async () => {
+      const user = await seedUser(ctx, { role: 'affiliate', totp: true });
+      const code = totpCodeAt(user.totpSecret as string, ctx.clock.now);
+      const outcome = await attemptLogin(
+        { db: ctx.db, config: ctx.config, clock: ctx.clock, onVerified: lockDuringVerify(user.id) },
+        attempt({ email: user.email, password: user.password, totpCode: code }),
+      );
+      expect(outcome).toEqual({ kind: 'invalid_credentials' });
+      expect(await ctx.db.select().from(sessions)).toHaveLength(0);
+      const row = await userRow(user.id);
+      expect(row.totpLastStep).toBeNull();
+      expect(row.failedLogins).toBe(10);
+      expect(await reasons()).toEqual(['locked']);
+    });
+
+    it('does not lift a lock when the tenth attempt of a window is someone else’s', async () => {
+      const aff = await seedUser(ctx, { role: 'affiliate' });
+      await ctx.db.update(users).set({ failedLogins: 8 }).where(eq(users.id, aff.id));
+      // This attempt reserves the 9th slot; a concurrent attempt then takes the 10th and locks.
+      const outcome = await attemptLogin(
+        {
+          db: ctx.db,
+          config: ctx.config,
+          clock: ctx.clock,
+          onVerified: async () => {
+            await post({ email: aff.email, password: WRONG });
+          },
+        },
+        attempt({ email: aff.email, password: aff.password }),
+      );
+      expect(outcome).toEqual({ kind: 'invalid_credentials' });
+      expect(await ctx.db.select().from(sessions)).toHaveLength(0);
+      expect((await userRow(aff.id)).lockedUntil).not.toBeNull();
+      expect(await reasons()).toEqual(['bad_password', 'locked']);
+    });
   });
 });

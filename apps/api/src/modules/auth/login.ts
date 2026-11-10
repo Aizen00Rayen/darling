@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import type { Me } from '@darling/shared';
 import type { Config } from '../../config';
 import type { Db, DbTx } from '../../db/client';
@@ -37,7 +37,13 @@ export type LoginOutcome =
   | { kind: 'ok'; me: Me; token: string; remember: boolean }
   | { kind: 'invalid_credentials' | 'totp_required' | 'totp_invalid' };
 
-export type LoginDeps = { db: Db; config: Pick<Config, 'encryptionKey'>; clock: () => Date };
+export type LoginDeps = {
+  db: Db;
+  config: Pick<Config, 'encryptionKey'>;
+  clock: () => Date;
+  /** Test seam: runs right after the password has been verified. Never set in production. */
+  onVerified?: () => Promise<void>;
+};
 
 async function recordEvent(
   tx: DbTx,
@@ -57,26 +63,58 @@ async function recordEvent(
   });
 }
 
+type Reservation = {
+  /** The count including this attempt. */
+  count: number;
+  /** Set when this attempt was the tenth of its window: the lock it put in place itself. */
+  ownLock: Date | null;
+};
+
 /**
- * Counts one failed attempt, atomically (one UPDATE, so parallel guesses cannot undercount) and
- * locks the account when the count reaches the limit. A lock that has already lapsed starts a fresh
- * count: the user gets a full set of attempts again, not a one-strike relock.
+ * Claims one of the ten attempts an account gets per window, in ONE atomic statement and before
+ * the password is looked at, so parallel guesses cannot all slip past a stale "not locked" read.
+ * No lock is held while argon2 runs. A lapsed lock restarts the count from zero. The tenth
+ * reservation puts the 15-minute lock in place straight away. Returns null when the account is
+ * locked (nothing is changed then).
  */
-async function countFailure(tx: DbTx, userId: string, now: Date): Promise<void> {
+async function reserveAttempt(db: Db, userId: string, now: Date): Promise<Reservation | null> {
   const lapsed = sql`(${users.lockedUntil} is not null and ${users.lockedUntil} <= ${now}::timestamptz)`;
-  const next = sql`(case when ${lapsed} then 1 else ${users.failedLogins} + 1 end)`;
+  const base = sql`(case when ${lapsed} then 0 else ${users.failedLogins} end)`;
   const lockUntil = new Date(now.getTime() + LOCK_MS);
-  await tx
+  const [row] = await db
     .update(users)
     .set({
-      failedLogins: next,
+      failedLogins: sql`${base} + 1`,
       lockedUntil: sql`case
-        when ${next} >= ${MAX_FAILED_LOGINS} then ${lockUntil}::timestamptz
+        when ${base} + 1 >= ${MAX_FAILED_LOGINS} then ${lockUntil}::timestamptz
         when ${lapsed} then null
         else ${users.lockedUntil}
       end`,
     })
-    .where(eq(users.id, userId));
+    .where(and(eq(users.id, userId), or(isNull(users.lockedUntil), lte(users.lockedUntil, now))))
+    .returning({ failedLogins: users.failedLogins, lockedUntil: users.lockedUntil });
+  if (!row) return null;
+  return {
+    count: row.failedLogins,
+    ownLock: row.failedLogins >= MAX_FAILED_LOGINS ? row.lockedUntil : null,
+  };
+}
+
+/**
+ * Gives back a reservation for an attempt that is not a failure (the right password, waiting for
+ * the 2FA code). If this attempt had taken the tenth slot, the lock it set goes with it; a lock
+ * that someone else put in place meanwhile is left alone.
+ */
+async function releaseReservation(tx: DbTx, userId: string, ownLock: Date | null): Promise<void> {
+  await tx
+    .update(users)
+    .set({ failedLogins: sql`greatest(${users.failedLogins} - 1, 0)`, lockedUntil: null })
+    .where(
+      and(
+        eq(users.id, userId),
+        or(isNull(users.lockedUntil), ownLock ? eq(users.lockedUntil, ownLock) : undefined),
+      ),
+    );
 }
 
 /**
@@ -84,16 +122,20 @@ async function countFailure(tx: DbTx, userId: string, now: Date): Promise<void> 
  * them); `reason` tells them apart only in login_events. Password verification runs for every known
  * or unknown email, in every state, so response time does not reveal whether an account exists,
  * is locked or is suspended.
+ *
+ * Order for an active account: reserve an attempt (atomic, see reserveAttempt), verify, then
+ * settle. A wrong password or wrong code keeps the reservation as the failed attempt. A missing
+ * code releases it. Success clears the counters, but only if the account is not locked by then.
  */
 export async function attemptLogin(deps: LoginDeps, a: LoginAttempt): Promise<LoginOutcome> {
-  const { db, config, clock } = deps;
+  const { db, config, clock, onVerified } = deps;
+  const now = clock();
 
   const [user] = await db
     .select({
       id: users.id,
       passwordHash: users.passwordHash,
       status: users.status,
-      lockedUntil: users.lockedUntil,
       totpEnabled: users.totpEnabled,
       totpSecretEnc: users.totpSecretEnc,
       totpLastStep: users.totpLastStep,
@@ -102,27 +144,29 @@ export async function attemptLogin(deps: LoginDeps, a: LoginAttempt): Promise<Lo
     .where(eq(users.email, a.email))
     .limit(1);
 
-  const passwordOk = await verifyPassword(user?.passwordHash ?? DUMMY_HASH, a.password);
-  const now = clock();
-
-  const reject = async (reason: Reason, userId: string | null, countAsFailure: boolean) => {
-    await db.transaction(async (tx) => {
-      if (countAsFailure && userId !== null) await countFailure(tx, userId, now);
-      await recordEvent(tx, a, userId, reason, now);
-    });
+  const reject = async (reason: Reason, userId: string | null) => {
+    await db.transaction((tx) => recordEvent(tx, a, userId, reason, now));
     return { kind: 'invalid_credentials' } as const;
   };
 
-  if (!user) return reject('unknown_email', null, false);
-  if (user.status !== 'active' || user.passwordHash === null) return reject('inactive', user.id, false);
-  if (user.lockedUntil !== null && user.lockedUntil > now) return reject('locked', user.id, false);
-  if (!passwordOk) return reject('bad_password', user.id, true);
+  // Unknown, suspended and password-less accounts never touch a counter.
+  if (!user || user.status !== 'active' || user.passwordHash === null) {
+    await verifyPassword(user?.passwordHash ?? DUMMY_HASH, a.password);
+    await onVerified?.();
+    return reject(user ? 'inactive' : 'unknown_email', user?.id ?? null);
+  }
 
+  const reservation = await reserveAttempt(db, user.id, now);
+  const passwordOk = await verifyPassword(user.passwordHash, a.password);
+  await onVerified?.();
+
+  if (!reservation) return reject('locked', user.id);
+  // The reservation already counted this attempt as a failure; nothing more to change.
+  if (!passwordOk) return reject('bad_password', user.id);
+
+  const { ownLock } = reservation;
   const rejectTotp = async (): Promise<LoginOutcome> => {
-    await db.transaction(async (tx) => {
-      await countFailure(tx, user.id, now);
-      await recordEvent(tx, a, user.id, 'totp_invalid', now);
-    });
+    await db.transaction((tx) => recordEvent(tx, a, user.id, 'totp_invalid', now));
     return { kind: 'totp_invalid' };
   };
 
@@ -130,7 +174,10 @@ export async function attemptLogin(deps: LoginDeps, a: LoginAttempt): Promise<Lo
   if (user.totpEnabled) {
     if (a.totpCode === undefined) {
       // The password was right; asking for the code is not a failed attempt.
-      await db.transaction((tx) => recordEvent(tx, a, user.id, 'totp_required', now));
+      await db.transaction(async (tx) => {
+        await releaseReservation(tx, user.id, ownLock);
+        await recordEvent(tx, a, user.id, 'totp_required', now);
+      });
       return { kind: 'totp_required' };
     }
     let secret: string | null = null;
@@ -143,20 +190,37 @@ export async function attemptLogin(deps: LoginDeps, a: LoginAttempt): Promise<Lo
     if (totpStep === null) return rejectTotp();
   }
 
-  const token = await db.transaction(async (tx): Promise<string | null> => {
-    const reset = { failedLogins: 0, lockedUntil: null, lastLoginAt: now };
-    if (totpStep !== null) {
-      // The step must advance, in the same statement that logs the user in: of two parallel logins
-      // carrying the same code only one UPDATE matches, the other updates nothing and is refused.
-      const step = totpStep;
-      const claimed = await tx
-        .update(users)
-        .set({ ...reset, totpLastStep: step })
-        .where(and(eq(users.id, user.id), or(isNull(users.totpLastStep), lt(users.totpLastStep, step))))
-        .returning({ id: users.id });
-      if (claimed.length === 0) return null;
-    } else {
-      await tx.update(users).set(reset).where(eq(users.id, user.id));
+  type Settled = { token: string } | 'locked' | 'totp_invalid';
+  const settled = await db.transaction(async (tx): Promise<Settled> => {
+    // One statement does all the gating: not locked (apart from the lock this very attempt set when
+    // it took the tenth slot), and, with 2FA, the step still ahead of the last one used. Of two
+    // parallel logins with the same code only one matches. Zero rows means we lost a race.
+    const step = totpStep;
+    const claimed = await tx
+      .update(users)
+      .set({
+        failedLogins: 0,
+        lockedUntil: null,
+        lastLoginAt: now,
+        ...(step === null ? {} : { totpLastStep: step }),
+      })
+      .where(
+        and(
+          eq(users.id, user.id),
+          or(isNull(users.lockedUntil), lte(users.lockedUntil, now), ownLock ? eq(users.lockedUntil, ownLock) : undefined),
+          step === null ? undefined : or(isNull(users.totpLastStep), lt(users.totpLastStep, step)),
+        ),
+      )
+      .returning({ id: users.id });
+
+    if (claimed.length === 0) {
+      if (step === null) return 'locked';
+      const [current] = await tx.select({ lockedUntil: users.lockedUntil }).from(users).where(eq(users.id, user.id));
+      const lockedNow =
+        current?.lockedUntil != null &&
+        current.lockedUntil > now &&
+        current.lockedUntil.getTime() !== ownLock?.getTime();
+      return lockedNow ? 'locked' : 'totp_invalid';
     }
 
     // Always a brand-new token: nothing the client sent is ever adopted as a session.
@@ -169,11 +233,12 @@ export async function attemptLogin(deps: LoginDeps, a: LoginAttempt): Promise<Lo
     });
     if (a.presentedSessionId !== undefined) await revokeSession(tx, a.presentedSessionId, now);
     await recordEvent(tx, a, user.id, 'ok', now);
-    return session.token;
+    return { token: session.token };
   });
-  if (token === null) return rejectTotp();
+  if (settled === 'locked') return reject('locked', user.id);
+  if (settled === 'totp_invalid') return rejectTotp();
 
   const principal = await loadPrincipal(db, user.id);
   if (!principal) return { kind: 'invalid_credentials' };
-  return { kind: 'ok', me: toMe(principal), token, remember: a.remember };
+  return { kind: 'ok', me: toMe(principal), token: settled.token, remember: a.remember };
 }
