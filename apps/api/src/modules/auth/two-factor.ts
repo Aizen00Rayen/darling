@@ -24,6 +24,7 @@ import { tooManyAttempts } from '../../plugins/errors';
 import { recordAudit } from '../audit/service';
 import { getSetting } from '../settings/service';
 import { revokeUserSessions } from './sessions';
+import { invalidateTokens } from './tokens';
 
 /**
  * ONE budget for every route that checks the current password (2fa/enable, 2fa/disable,
@@ -226,8 +227,8 @@ export async function disableTwoFactor(
 }
 
 /**
- * Replaces the password after checking the current one, ends every OTHER session of the user and
- * keeps the caller's. The hash is swapped only if it is still the one that was verified, so two
+ * Replaces the password after checking the current one, ends every OTHER session of the user (keeping
+ * the caller's) and voids their pending reset links. The hash is swapped only if it is still the one that was verified, so two
  * parallel changes cannot both win.
  */
 export async function changePassword(
@@ -258,6 +259,8 @@ export async function changePassword(
       .returning({ id: users.id });
     if (claimed.length === 0) return { kind: 'conflict' } as const;
     await revokeUserSessions(tx, actor.userId, actor.sessionId, now);
+    // A reset link requested before this change must not be able to undo it.
+    await invalidateTokens(tx, { userId: actor.userId, type: 'password_reset', now });
     await recordAudit(tx, {
       actorUserId: actor.userId,
       action: 'auth.password_changed',

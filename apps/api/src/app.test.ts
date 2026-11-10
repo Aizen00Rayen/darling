@@ -256,6 +256,19 @@ describe('logging', () => {
     );
   });
 
+  it('keeps the invitation token out of the log lines of the lookup route', async () => {
+    const { stream, records } = captureStream();
+    const app = await buildApp(testDeps(), { logStream: stream });
+    const token = 'SECRET-invite-token_0123456789abcdefghijklmnopq';
+    await app.inject({ method: 'GET', url: `/api/auth/invite/${token}?x=1` });
+    await app.inject({ method: 'POST', url: '/api/auth/invite/accept', headers: CSRF_HEADERS, payload: {} });
+    const raw = JSON.stringify(records());
+    expect(raw).toContain('/api/auth/invite/[Redacted]');
+    expect(raw).toContain('/api/auth/invite/accept');
+    expect(raw).not.toContain(token);
+    await app.close();
+  });
+
   it('censors sensitive fields in log lines', async () => {
     const { stream, records } = captureStream();
     const app = await buildApp(testDeps({ config: testConfig() }), { logStream: stream });

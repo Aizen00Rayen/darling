@@ -7,6 +7,7 @@ import { tooManyAttempts } from '../../plugins/errors';
 import { clearSessionCookie, setSessionCookie } from './cookie';
 import { attemptLogin } from './login';
 import { loadPrincipal, toMe } from './principal';
+import { recoveryRoutes } from './recovery';
 import { revokeSession } from './sessions';
 import { accountSecurityRoutes } from './two-factor';
 
@@ -56,6 +57,7 @@ export async function authRoutes(app: FastifyInstance, deps: AppDeps): Promise<v
   );
 
   await app.register(accountSecurityRoutes, deps);
+  await app.register(recoveryRoutes, deps);
 
   typed.post(
     '/api/auth/logout',
