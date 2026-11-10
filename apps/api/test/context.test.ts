@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { userPermissions, users } from '../src/db/schema';
-import { verifyPassword } from '../src/lib/crypto';
+import { decryptSecret, verifyPassword } from '../src/lib/crypto';
 import { connectAsOwner, createTestClock, createTestContext, login, seedUser } from './context';
 
 describe('test harness', () => {
@@ -29,7 +29,7 @@ describe('test harness', () => {
     await a.close(); // closing twice is harmless
   });
 
-  it('seeds users with permissions and owner flag; login arrives in Task 7', async () => {
+  it('seeds users (permissions, owner flag, TOTP) and logs in through the API', async () => {
     const ctx = await createTestContext();
     try {
       const owner = await seedUser(ctx, { role: 'super_manager', isOwner: true });
@@ -50,10 +50,14 @@ describe('test harness', () => {
       const [customRow] = await ctx.db.select().from(users).where(eq(users.id, custom.id));
       expect(await verifyPassword(customRow?.passwordHash ?? '', 'Other-gloss-2026')).toBe(true);
       expect(await verifyPassword(customRow?.passwordHash ?? '', 'Rose-gloss-2026')).toBe(false);
-      await expect(seedUser(ctx, { role: 'affiliate', totp: true })).rejects.toThrow(
-        'seedUser({ totp: true }) is available from Task 7',
-      );
-      await expect(login(ctx, owner.email, owner.password)).rejects.toThrow('login() is available from Task 7');
+      const enrolled = await seedUser(ctx, { role: 'affiliate', totp: true });
+      const [enrolledRow] = await ctx.db.select().from(users).where(eq(users.id, enrolled.id));
+      expect(enrolled.totpSecret).toMatch(/^[A-Z2-7]+$/);
+      expect(enrolledRow?.totpEnabled).toBe(true);
+      expect(enrolledRow?.totpSecretEnc).toMatch(/^v1:/);
+      expect(decryptSecret(enrolledRow?.totpSecretEnc ?? '', ctx.config.encryptionKey)).toBe(enrolled.totpSecret);
+      expect(await login(ctx, owner.email, owner.password)).toMatch(/^dl_session=[A-Za-z0-9_-]{43}$/);
+      await expect(login(ctx, sub.email, sub.password)).rejects.toThrow('login() failed with 401');
     } finally {
       await ctx.close();
     }

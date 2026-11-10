@@ -128,7 +128,11 @@ export const loginEvents = pgTable(
     reason: text('reason'),
     at: timestamptz('at').notNull().defaultNow(),
   },
-  (t) => [index('login_events_user_id_idx').on(t.userId), index('login_events_at_idx').on(t.at)],
+  (t) => [
+    index('login_events_user_id_idx').on(t.userId),
+    index('login_events_at_idx').on(t.at),
+    index('login_events_email_tried_at_idx').on(t.emailTried, t.at),
+  ],
 );
 
 export const auditLog = pgTable(

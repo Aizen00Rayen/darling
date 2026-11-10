@@ -4,6 +4,11 @@ import * as schema from './schema';
 
 export type Db = NodePgDatabase<typeof schema>;
 
+/** The handle a transaction callback receives; it has the same query API as `Db`. */
+export type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+/** Anything services accept so they work both on their own and inside a transaction. */
+export type DbExecutor = Db | DbTx;
+
 export type DbHandle = { db: Db; close(): Promise<void> };
 
 export function createDb(url: string): DbHandle {

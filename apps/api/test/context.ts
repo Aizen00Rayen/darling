@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import * as OTPAuth from 'otpauth';
 import { v7 } from 'uuid';
 import pg from 'pg';
 import type { Permission, Role, UserStatus } from '@darling/shared';
-import { buildApp, type Clock } from '../src/app';
+import { buildApp, type BuildAppOptions, type Clock, type Config } from '../src/app';
 import { createDb, type Db } from '../src/db/client';
 import { userPermissions, users } from '../src/db/schema';
-import { hashPassword } from '../src/lib/crypto';
+import { encryptSecret, hashPassword } from '../src/lib/crypto';
+import { newTotpSecret } from '../src/lib/totp';
 import { memoryMailer, type MemoryMailer } from '../src/mail/mailer';
 import { testConfig } from '../src/test-helpers';
 import { ownerAdminUrl, requireEnv, TEMPLATE_DB, withDatabase } from './env';
@@ -19,6 +21,7 @@ export type TestClock = Clock & {
 
 export type TestContext = {
   app: FastifyInstance;
+  config: Config;
   /** Connected as darling_app, the same role the running API uses. */
   db: Db;
   mailer: MemoryMailer;
@@ -61,8 +64,15 @@ async function adminQuery(sql: string, params: unknown[] = []): Promise<void> {
   }
 }
 
+export type TestContextOptions = {
+  /** Overrides applied on top of the test configuration (for example `cookieSecure: true`). */
+  config?: Partial<Config>;
+  /** Passed to `buildApp`; `extend` adds probe routes that sit behind the real plugins. */
+  build?: Pick<BuildAppOptions, 'extend'>;
+};
+
 /** Clones the migrated template into a private database and boots the app against it. */
-export async function createTestContext(): Promise<TestContext> {
+export async function createTestContext(options: TestContextOptions = {}): Promise<TestContext> {
   const databaseName = `darling_test_${randomUUID().replaceAll('-', '')}`;
   await adminQuery(`create database ${databaseName} template ${TEMPLATE_DB}`);
 
@@ -72,12 +82,16 @@ export async function createTestContext(): Promise<TestContext> {
   const mailer = memoryMailer();
   const clock = createTestClock();
 
-  const app = await buildApp({
-    config: testConfig({ databaseUrl: appUrl, databaseOwnerUrl: ownerUrl }),
-    db,
-    mailer,
-    clock,
-  });
+  const config = testConfig({ databaseUrl: appUrl, databaseOwnerUrl: ownerUrl, ...options.config });
+  const app = await buildApp(
+    {
+      config,
+      db,
+      mailer,
+      clock,
+    },
+    options.build,
+  );
 
   let closed = false;
   async function close(): Promise<void> {
@@ -95,7 +109,7 @@ export async function createTestContext(): Promise<TestContext> {
     }
   }
 
-  return { app, db, mailer, clock, databaseName, close };
+  return { app, config, db, mailer, clock, databaseName, close };
 }
 
 export type SeedUserInput = {
@@ -108,16 +122,22 @@ export type SeedUserInput = {
   totp?: boolean;
 };
 
-export type SeededUser = { id: string; email: string; password: string; totpSecret?: string };
+export type SeededUser = {
+  id: string;
+  email: string;
+  password: string;
+  /** Base32 secret of the enrolled authenticator; present when seeded with `totp: true`. */
+  totpSecret?: string;
+};
 
 const DEFAULT_PASSWORD = 'Rose-gloss-2026';
 
 /** Inserts a user (and permissions) straight into the database. */
 export async function seedUser(ctx: TestContext, input: SeedUserInput): Promise<SeededUser> {
-  if (input.totp) throw new Error('seedUser({ totp: true }) is available from Task 7');
   const id = v7();
   const email = input.email ?? `user-${id.slice(-12)}@example.test`;
   const password = input.password ?? DEFAULT_PASSWORD;
+  const totpSecret = input.totp ? newTotpSecret() : undefined;
   await ctx.db.insert(users).values({
     id,
     email,
@@ -126,21 +146,76 @@ export async function seedUser(ctx: TestContext, input: SeedUserInput): Promise<
     role: input.role,
     status: input.status ?? 'active',
     isOwner: input.isOwner ?? false,
+    ...(totpSecret
+      ? { totpSecretEnc: encryptSecret(totpSecret, ctx.config.encryptionKey), totpEnabled: true }
+      : {}),
   });
   if (input.permissions?.length) {
     await ctx.db
       .insert(userPermissions)
       .values(input.permissions.map((permission) => ({ userId: id, permission })));
   }
-  return { id, email, password };
+  return { id, email, password, ...(totpSecret ? { totpSecret } : {}) };
 }
 
-/** Logs in through the API and returns the Cookie header to send on later requests. */
+/** The 6-digit code an authenticator shows for `secret` at `at` (offset a whole step with `stepOffset`). */
+export function totpCodeAt(secret: string, at: Date, stepOffset = 0): string {
+  const totp = new OTPAuth.TOTP({
+    algorithm: 'SHA1',
+    digits: 6,
+    period: 30,
+    secret: OTPAuth.Secret.fromBase32(secret),
+  });
+  return totp.generate({ timestamp: at.getTime() + stepOffset * 30_000 });
+}
+
+/** Headers every state-changing request from the web app carries (CSRF plugin). */
+export function csrfHeaders(ctx: TestContext): Record<string, string> {
+  return { 'x-requested-with': 'fetch', origin: ctx.config.appOrigin };
+}
+
+let nextAddress = 0;
+/** A distinct client address per call, so tests do not share the per-IP login rate limit. */
+export function freshAddress(): string {
+  nextAddress += 1;
+  return `10.${(nextAddress >> 16) & 255}.${(nextAddress >> 8) & 255}.${nextAddress & 255}`;
+}
+
+/** `name=value` of the session cookie in a response, or undefined when none was set. */
+export function sessionCookieOf(res: { headers: Record<string, unknown> }): string | undefined {
+  const raw = res.headers['set-cookie'];
+  const list = Array.isArray(raw) ? raw : raw === undefined ? [] : [String(raw)];
+  const found = list.find((c) => /^(__Host-)?dl_session=/.test(c));
+  return found?.split(';')[0];
+}
+
+/**
+ * Logs in through the API and returns the Cookie header to send on later requests. Each call comes
+ * from its own client address unless `remoteAddress` is given.
+ */
 export async function login(
-  _ctx: TestContext,
-  _email: string,
-  _password: string,
-  _totpCode?: string,
+  ctx: TestContext,
+  email: string,
+  password: string,
+  totpCode?: string,
+  options: { remember?: boolean; remoteAddress?: string } = {},
 ): Promise<string> {
-  throw new Error('login() is available from Task 7');
+  const res = await ctx.app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    headers: csrfHeaders(ctx),
+    remoteAddress: options.remoteAddress ?? freshAddress(),
+    payload: {
+      email,
+      password,
+      ...(totpCode === undefined ? {} : { totpCode }),
+      ...(options.remember === undefined ? {} : { remember: options.remember }),
+    },
+  });
+  if (res.statusCode !== 200) {
+    throw new Error(`login() failed with ${res.statusCode}: ${res.body}`);
+  }
+  const cookie = sessionCookieOf(res);
+  if (!cookie) throw new Error('login() succeeded without a session cookie');
+  return cookie;
 }

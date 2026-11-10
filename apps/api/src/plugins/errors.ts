@@ -14,6 +14,14 @@ const CLIENT_ERROR_CODES: Record<number, string> = {
   429: 'rate_limited',
 };
 
+/**
+ * An error a route raises on purpose with its own public `code` (for example the login rate limit's
+ * `too_many_attempts`), as opposed to the generic code derived from the status.
+ */
+export function apiError(statusCode: number, code: string): Error & { statusCode: number; apiCode: string } {
+  return Object.assign(new Error(code), { statusCode, apiCode: code });
+}
+
 function validationErrors(error: { validation: { instancePath: string; message?: string }[] }) {
   const errors: Record<string, string> = {};
   for (const issue of error.validation) {
@@ -38,7 +46,10 @@ export function registerErrorHandling(app: FastifyInstance) {
     }
     const status = error.statusCode;
     if (status !== undefined && status >= 400 && status < 500) {
-      return send(reply, status, { code: CLIENT_ERROR_CODES[status] ?? 'bad_request' });
+      const apiCode = (error as { apiCode?: unknown }).apiCode;
+      const code =
+        typeof apiCode === 'string' ? apiCode : (CLIENT_ERROR_CODES[status] ?? 'bad_request');
+      return send(reply, status, { code });
     }
     // Anything else is a bug or an outage: log it with the request id, tell the client nothing.
     req.log.error({ err: error, reqId: req.id }, 'unhandled error');

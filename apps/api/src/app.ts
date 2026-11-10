@@ -15,7 +15,9 @@ import type { Config } from './config';
 import type { Db } from './db/client';
 import type { Clock } from './lib/clock';
 import type { Mailer } from './mail/mailer';
+import { authRoutes } from './modules/auth/routes';
 import { accessPlugin } from './plugins/access';
+import { authPlugin } from './plugins/auth';
 import { csrfPlugin } from './plugins/csrf';
 import { registerErrorHandling } from './plugins/errors';
 import { loggerOptions } from './plugins/logging';
@@ -77,6 +79,8 @@ export async function buildApp(
 
   // Both are non-encapsulated and must come before any route so their hooks cover every route.
   await app.register(csrfPlugin, { appOrigin: config.appOrigin });
+  // The auth plugin resolves the session in onRequest; the access plugin enforces in preValidation.
+  await app.register(authPlugin, { config, db, clock: deps.clock });
   await app.register(accessPlugin);
 
   registerErrorHandling(app);
@@ -108,6 +112,8 @@ export async function buildApp(
       }
     },
   );
+
+  await app.register(authRoutes, deps);
 
   await options.extend?.(app);
 
