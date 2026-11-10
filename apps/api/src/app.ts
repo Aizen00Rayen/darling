@@ -16,6 +16,7 @@ import type { Db } from './db/client';
 import type { Clock } from './lib/clock';
 import type { Mailer } from './mail/mailer';
 import { authRoutes } from './modules/auth/routes';
+import { userRoutes } from './modules/users/routes';
 import { accessPlugin } from './plugins/access';
 import { authPlugin } from './plugins/auth';
 import { csrfPlugin } from './plugins/csrf';
@@ -114,6 +115,7 @@ export async function buildApp(
   );
 
   await app.register(authRoutes, deps);
+  await app.register(userRoutes, deps);
 
   await options.extend?.(app);
 

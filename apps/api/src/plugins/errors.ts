@@ -22,6 +22,13 @@ export function apiError(statusCode: number, code: string): Error & { statusCode
   return Object.assign(new Error(code), { statusCode, apiCode: code });
 }
 
+/** A 400 `validation` a service raises itself, with one message per offending field. */
+export function validationError(
+  errors: Record<string, string>,
+): Error & { statusCode: number; apiCode: string; apiErrors: Record<string, string> } {
+  return Object.assign(apiError(400, 'validation'), { apiErrors: errors });
+}
+
 /**
  * The 429 body for routes that guard a credential check (login, password and 2FA verification):
  * a distinct code. `Retry-After` is set by @fastify/rate-limit itself.
@@ -57,7 +64,8 @@ export function registerErrorHandling(app: FastifyInstance) {
       const apiCode = (error as { apiCode?: unknown }).apiCode;
       const code =
         typeof apiCode === 'string' ? apiCode : (CLIENT_ERROR_CODES[status] ?? 'bad_request');
-      return send(reply, status, { code });
+      const errors = (error as { apiErrors?: Record<string, string> }).apiErrors;
+      return send(reply, status, errors ? { code, errors } : { code });
     }
     // Anything else is a bug or an outage: log it with the request id, tell the client nothing.
     req.log.error({ err: error, reqId: req.id }, 'unhandled error');
