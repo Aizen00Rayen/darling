@@ -1,0 +1,5 @@
+# graphify: skip binary marketing assets and the live-site snapshot (duplicates of code/docs)
+apps/web/public/assets/
+apps/web/reference/
+packages/shared/src/common-passwords.ts
+pnpm-lock.yaml
