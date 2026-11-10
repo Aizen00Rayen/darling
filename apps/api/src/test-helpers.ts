@@ -20,8 +20,13 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
   };
 }
 
+/** A stand-in Db for tests that only exercise `db.execute` (the health check). */
+export function fakeDb(execute: () => Promise<unknown>): Db {
+  return { execute } as unknown as Db;
+}
+
 export function testDeps(overrides: Partial<AppDeps> = {}): AppDeps {
-  const db: Db = { execute: async () => [] };
+  const db = fakeDb(async () => []);
   const mailer: Mailer = { send: async () => {} };
   return {
     config: testConfig(),

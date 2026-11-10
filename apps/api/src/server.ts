@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { buildApp, type AppDeps } from './app';
 import { loadConfig } from './config';
+import { createDb } from './db/client';
 import { systemClock } from './lib/clock';
 
 // Resolve relative to this file, not the cwd, so `pnpm --filter` and root runs agree.
@@ -10,12 +11,12 @@ dotenv.config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)), 
 async function main() {
   const config = loadConfig(process.env);
 
-  // Placeholders until Task 5 (database) and Task 6 (mailer) provide the real ones.
+  const { db, close: closeDb } = createDb(config.databaseUrl);
+
+  // The mailer is a placeholder until Task 6 provides the real one.
   const deps: AppDeps = {
     config,
-    db: {
-      execute: () => Promise.reject(new Error('database not configured until Task 5')),
-    },
+    db,
     mailer: {
       send: () => {
         throw new Error('mailer not configured until Task 6');
@@ -33,6 +34,7 @@ async function main() {
     app.log.info({ signal }, 'shutting down');
     try {
       await app.close();
+      await closeDb();
       process.exit(0);
     } catch (err) {
       app.log.error({ err }, 'error during shutdown');

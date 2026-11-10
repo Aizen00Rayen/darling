@@ -3,6 +3,7 @@ import type { Writable } from 'node:stream';
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
 import {
   serializerCompiler,
@@ -24,6 +25,8 @@ export type BuildAppOptions = { logStream?: Writable };
 
 const REQUEST_ID_HEADER = 'x-request-id';
 const VALID_REQUEST_ID = /^[A-Za-z0-9_-]{8,64}$/;
+
+const HEALTH_DB_TIMEOUT_MS = 2_000;
 
 const healthResponse = z.object({ ok: z.boolean(), db: z.enum(['up', 'down']) });
 
@@ -73,12 +76,23 @@ export async function buildApp(
       schema: { response: { 200: healthResponse, 503: healthResponse } },
     },
     async (_req, reply) => {
+      let timer: NodeJS.Timeout | undefined;
       try {
-        await db.execute('select 1');
+        await Promise.race([
+          db.execute(sql`select 1`),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`database did not answer within ${HEALTH_DB_TIMEOUT_MS} ms`)),
+              HEALTH_DB_TIMEOUT_MS,
+            );
+          }),
+        ]);
         return { ok: true, db: 'up' as const };
       } catch (err) {
         app.log.error({ err }, 'health check: database unreachable');
         return reply.status(503).send({ ok: false, db: 'down' });
+      } finally {
+        clearTimeout(timer);
       }
     },
   );

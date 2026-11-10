@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { buildApp } from './app';
 import { LOG_REDACT_PATHS } from './plugins/logging';
-import { testConfig, testDeps } from './test-helpers';
+import { fakeDb, testConfig, testDeps } from './test-helpers';
 
 function captureStream() {
   const lines: string[] = [];
@@ -21,12 +21,10 @@ describe('GET /api/health', () => {
     let executed = 0;
     const app = await buildApp(
       testDeps({
-        db: {
-          execute: async () => {
-            executed += 1;
-            return [];
-          },
-        },
+        db: fakeDb(async () => {
+          executed += 1;
+          return [];
+        }),
       }),
     );
     const res = await app.inject({ method: 'GET', url: '/api/health' });
@@ -40,17 +38,25 @@ describe('GET /api/health', () => {
   it('returns 503 { ok: false, db: "down" } when the database check rejects', async () => {
     const app = await buildApp(
       testDeps({
-        db: {
-          execute: async () => {
-            throw new Error('connection refused');
-          },
-        },
+        db: fakeDb(async () => {
+          throw new Error('connection refused');
+        }),
       }),
     );
     const res = await app.inject({ method: 'GET', url: '/api/health' });
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ ok: false, db: 'down' });
     expect(res.headers['x-request-id']).toBeTruthy();
+    await app.close();
+  });
+
+  it('returns 503 within a couple of seconds when the database hangs', async () => {
+    const app = await buildApp(testDeps({ db: fakeDb(() => new Promise(() => {})) }));
+    const started = Date.now();
+    const res = await app.inject({ method: 'GET', url: '/api/health' });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ ok: false, db: 'down' });
+    expect(Date.now() - started).toBeLessThan(5_000);
     await app.close();
   });
 });
