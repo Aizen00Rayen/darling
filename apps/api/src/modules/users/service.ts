@@ -16,7 +16,7 @@ import { userPermissions, users } from '../../db/schema';
 import { apiError, validationError } from '../../plugins/errors';
 import { recordAudit } from '../audit/service';
 import { revokeUserSessions } from '../auth/sessions';
-import { sendInvite } from '../auth/tokens';
+import { issueInviteMail, sendInvite } from '../auth/tokens';
 
 export const PAGE_SIZE = 50;
 
@@ -143,7 +143,63 @@ async function lockOwners(tx: DbTx): Promise<OwnerRow[]> {
     .for('update');
 }
 
-type Locked = { target: Row; grants: Permission[]; owners: OwnerRow[]; now: Date };
+type Locked = {
+  target: Row;
+  grants: Permission[];
+  owners: OwnerRow[];
+  now: Date;
+  /**
+   * Re-checks the acting user against the database as it stands now, under the locks. Every change
+   * must call it before it writes (`mutate` fails the transaction if it was skipped).
+   */
+  authorise: (needsOwner: boolean) => Promise<void>;
+};
+
+/**
+ * The acting user's authority is decided by the request-start snapshot only far enough to refuse
+ * early; the request may then have queued behind the owner locks while someone demoted, suspended
+ * or stripped that user. So, inside the transaction and after the owner rows are locked, the actor
+ * is read again: an owner actor is judged by the locked owner rows (current by construction), any
+ * other actor by their own row (`FOR SHARE`) and current grants. The lock order stays owners (by
+ * id), then the target, then this read, so it cannot deadlock.
+ *
+ * - `owner_required` when the change needs an owner and the actor is not an active owner (any more);
+ * - `forbidden` when the actor is no longer active, or holds no `users.manage` any more.
+ */
+async function reauthorise(
+  tx: DbTx,
+  actor: Actor,
+  owners: OwnerRow[],
+  needsOwner: boolean,
+): Promise<void> {
+  const lockedSelf = owners.find((o) => o.id === actor.userId);
+  let active: boolean;
+  let isActiveOwner: boolean;
+  if (lockedSelf) {
+    active = lockedSelf.status === 'active';
+    isActiveOwner = active;
+  } else {
+    const [self] = await tx
+      .select({ status: users.status, role: users.role, isOwner: users.isOwner })
+      .from(users)
+      .where(eq(users.id, actor.userId))
+      .limit(1)
+      .for('share');
+    active = self?.status === 'active' && self.role === 'super_manager';
+    // Not in the locked owner set, so not an owner: nobody can become one without these locks.
+    isActiveOwner = false;
+  }
+
+  if (needsOwner && !isActiveOwner) throw ownerRequired();
+  if (!active) throw apiError(403, 'forbidden');
+  if (isActiveOwner) return; // an owner holds every permission
+  const [grant] = await tx
+    .select({ permission: userPermissions.permission })
+    .from(userPermissions)
+    .where(and(eq(userPermissions.userId, actor.userId), eq(userPermissions.permission, 'users.manage')))
+    .limit(1);
+  if (!grant) throw apiError(403, 'forbidden');
+}
 
 /**
  * Runs `change` in a transaction that holds the owner locks and the target's row lock, with the
@@ -153,6 +209,7 @@ async function mutate<T>(
   deps: Deps,
   log: Log,
   what: string,
+  actor: Actor,
   id: string,
   change: (tx: DbTx, locked: Locked) => Promise<T>,
 ): Promise<T> {
@@ -163,7 +220,15 @@ async function mutate<T>(
       const [target] = await tx.select().from(users).where(eq(users.id, id)).limit(1).for('update');
       if (!target) throw notFound();
       const grants = await loadGrants(tx, id);
-      return change(tx, { target, grants, owners, now: deps.clock() });
+      let authorised = false;
+      const authorise = async (needsOwner: boolean) => {
+        await reauthorise(tx, actor, owners, needsOwner);
+        authorised = true;
+      };
+      const result = await change(tx, { target, grants, owners, now: deps.clock(), authorise });
+      // A change that forgot to re-authorise must not commit.
+      if (!authorised) throw new Error(`${what} did not re-authorise the actor`);
+      return result;
     }),
   );
 }
@@ -269,6 +334,9 @@ export async function createUser(deps: Deps, actor: Actor, input: CreateUserInpu
   const now = deps.clock();
   const created = await guarded(log, 'user creation', () =>
     deps.db.transaction(async (tx) => {
+      // Same lock order as every other mutation; the creator is re-checked under it.
+      const owners = await lockOwners(tx);
+      await reauthorise(tx, actor, owners, input.role === 'super_manager');
       const [row] = await tx
         .insert(users)
         .values({
@@ -316,7 +384,7 @@ export async function updateUser(
   input: UpdateInput,
   log: Log,
 ): Promise<User> {
-  return mutate(deps, log, 'user update', id, async (tx, { target, grants, owners, now }) => {
+  return mutate(deps, log, 'user update', actor, id, async (tx, { target, grants, owners, now, authorise }) => {
     const self = target.id === actor.userId;
     const newRole = input.role ?? target.role;
     const roleChanged = newRole !== target.role;
@@ -349,6 +417,10 @@ export async function updateUser(
     // The role cannot change while the user is an owner (checked above), so the flag is the only
     // way to drop an active owner here; the suspension path has its own check.
     if (ownerChanged && !newOwner) assertNotLastOwner(owners, target);
+
+    // After the last-owner check, so of two owners demoting each other the loser still hears
+    // `last_owner`. A change that touches a super manager, or makes one, needs an owner.
+    await authorise(target.role === 'super_manager' || newRole === 'super_manager');
 
     const finalGrants = newRole === 'super_manager' ? newGrants : [];
     const grantsChanged = finalGrants.length !== grants.length || finalGrants.some((p, i) => p !== grants[i]);
@@ -402,12 +474,17 @@ export async function suspendUser(
   input: ActionInput,
   log: Log,
 ): Promise<void> {
-  return mutate(deps, log, 'user suspension', id, async (tx, { target, grants, owners, now }) => {
+  return mutate(deps, log, 'user suspension', actor, id, async (tx, { target, grants, owners, now, authorise }) => {
     if (target.id === actor.userId) throw apiError(409, 'cannot_suspend_self');
     requireOwnerFor(target, actor);
-    if (target.status === 'suspended') return;
-    if (target.status === 'deactivated') throw apiError(409, 'invalid_status');
+    const needsOwner = target.role === 'super_manager';
+    if (target.status === 'suspended' || target.status === 'deactivated') {
+      await authorise(needsOwner);
+      if (target.status === 'deactivated') throw apiError(409, 'invalid_status');
+      return;
+    }
     assertNotLastOwner(owners, target);
+    await authorise(needsOwner);
 
     const [updated] = await tx
       .update(users)
@@ -437,8 +514,9 @@ export async function reactivateUser(
   input: ActionInput,
   log: Log,
 ): Promise<void> {
-  return mutate(deps, log, 'user reactivation', id, async (tx, { target, grants, now }) => {
+  return mutate(deps, log, 'user reactivation', actor, id, async (tx, { target, grants, now, authorise }) => {
     requireOwnerFor(target, actor);
+    await authorise(target.role === 'super_manager');
     if (target.status !== 'suspended') throw apiError(409, 'not_suspended');
 
     // Someone who never set a password goes back to waiting for their invitation.
@@ -471,8 +549,9 @@ export async function revokeSessions(
   input: ActionInput,
   log: Log,
 ): Promise<void> {
-  return mutate(deps, log, 'session revocation', id, async (tx, { target, now }) => {
+  return mutate(deps, log, 'session revocation', actor, id, async (tx, { target, now, authorise }) => {
     requireOwnerFor(target, actor);
+    await authorise(target.role === 'super_manager');
     await revokeUserSessions(tx, target.id, undefined, now);
     await recordAudit(tx, {
       actorUserId: actor.userId,
@@ -487,9 +566,11 @@ export async function revokeSessions(
 }
 
 /**
- * Sends a fresh invitation (older links stop working) to a user who has not accepted one yet.
- * Returns false when the mail could not be sent; the audit entry is written only for a mail that
- * went out.
+ * Sends a fresh invitation (older links stop working) to a user who has not accepted one yet. The
+ * token and the `user.invite_resent` audit row commit together, under the same locks and
+ * re-authorisation as every other change; the mail goes out AFTER the commit. Returns false when
+ * the transport fails: the new token and the audit row stay (the link was issued but not
+ * delivered), and the next resend replaces that token.
  */
 export async function resendInvite(
   deps: Deps,
@@ -498,15 +579,13 @@ export async function resendInvite(
   input: ActionInput,
   log: Log,
 ): Promise<boolean> {
-  assertId(id);
-  const [target] = await deps.db.select().from(users).where(eq(users.id, id)).limit(1);
-  if (!target) throw notFound();
-  requireOwnerFor(target, actor);
-  if (target.status !== 'invited') throw apiError(409, 'not_invited');
+  const mail = await mutate(deps, log, 'invitation', actor, id, async (tx, { target, authorise }) => {
+    requireOwnerFor(target, actor);
+    await authorise(target.role === 'super_manager');
+    if (target.status !== 'invited') throw apiError(409, 'not_invited');
 
-  if (!(await trySendInvite(deps, log, target))) return false;
-  await guarded(log, 'invite audit', () =>
-    recordAudit(deps.db, {
+    const issued = await issueInviteMail(deps, tx, target);
+    await recordAudit(tx, {
       actorUserId: actor.userId,
       action: 'user.invite_resent',
       entityType: 'user',
@@ -514,7 +593,16 @@ export async function resendInvite(
       reason: input.reason,
       ip: actor.ip,
       requestId: actor.requestId,
-    }),
-  );
-  return true;
+    });
+    return issued;
+  });
+
+  try {
+    await deps.mailer.send(mail);
+    return true;
+  } catch {
+    // The error is dropped on purpose: a mail transport error usually quotes the recipient.
+    log.error({ userId: id }, 'invitation mail could not be sent');
+    return false;
+  }
 }

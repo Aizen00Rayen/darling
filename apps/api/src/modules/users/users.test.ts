@@ -3,6 +3,7 @@ import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PERMISSIONS, type Permission, type Role } from '@darling/shared';
 import { buildApp } from '../../app';
+import type { DbTx } from '../../db/client';
 import { auditLog, authTokens, sessions, settings, userPermissions, users } from '../../db/schema';
 import { memoryMailer } from '../../mail/mailer';
 import {
@@ -97,21 +98,26 @@ async function activeOwnerIds(): Promise<string[]> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Holds row locks on the given users in a test transaction, so requests queue up behind them. */
+/**
+ * Holds row locks on the given users in a test transaction, so requests queue up behind them.
+ * `release` can first apply a change inside that same transaction: it commits together with the
+ * release, so it is applied before any queued request gets the lock.
+ */
 async function holdLocks(ids: string[]) {
-  let release!: () => void;
-  const released = new Promise<void>((r) => (release = r));
+  let release!: (change?: (tx: DbTx) => Promise<void>) => void;
+  const released = new Promise<((tx: DbTx) => Promise<void>) | undefined>((r) => (release = r));
   let acquired!: () => void;
   const got = new Promise<void>((r) => (acquired = r));
   const done = ctx.db.transaction(async (tx) => {
     await tx.select({ id: users.id }).from(users).where(inArray(users.id, ids)).orderBy(users.id).for('update');
     acquired();
-    await released;
+    const change = await released;
+    if (change) await change(tx);
   });
   await got;
   return {
-    async release() {
-      release();
+    async release(change?: (tx: DbTx) => Promise<void>) {
+      release(change);
       await done;
     },
   };
@@ -130,7 +136,11 @@ async function waitForBlocked(n: number) {
 }
 
 /** Fires the requests while the owner rows are locked, then lets them race for the lock. */
-async function raceBehindLock<T>(ownerIds: string[], fire: () => Promise<T>[]): Promise<T[]> {
+async function raceBehindLock<T>(
+  ownerIds: string[],
+  fire: () => Promise<T>[],
+  change?: (tx: DbTx) => Promise<void>,
+): Promise<T[]> {
   const hold = await holdLocks(ownerIds);
   let all: Promise<T[]> | undefined;
   try {
@@ -139,7 +149,7 @@ async function raceBehindLock<T>(ownerIds: string[], fire: () => Promise<T>[]): 
     await waitForBlocked(pending.length);
   } finally {
     // Always let go, or a failing test would leave the rows locked for every later one.
-    await hold.release();
+    await hold.release(change);
   }
   return all;
 }
@@ -712,7 +722,11 @@ describe('last owner invariant under concurrency (Review Focus 2)', () => {
         patch(b.cookie, c.id, { isOwner: false }),
         patch(c.cookie, a.id, { isOwner: false }),
       ]);
-      expect(sortedStatuses(results)).toEqual([200, 200, 409]);
+      // Two demotions land. The third actor has by then been demoted itself (403, the re-check
+      // under the lock) or would take the last owner (409): either way one owner is left.
+      const statuses = sortedStatuses(results);
+      expect(statuses.slice(0, 2)).toEqual([200, 200]);
+      expect([403, 409]).toContain(statuses[2]);
       expect(await activeOwnerIds()).toHaveLength(1);
     }
   });
@@ -1053,5 +1067,205 @@ describe('audit entries', () => {
     const [entry] = await auditsFor('user.updated', sm.id);
     expect(entry!.before).toMatchObject({ permissions: ['orders.read'] });
     expect(entry!.after).toMatchObject({ permissions: ['orders.read', 'audit.read'] });
+  });
+});
+
+describe('the acting user is re-authorised after the locks (R12)', () => {
+  const demote = (id: string) => async (tx: DbTx) => {
+    await tx.update(users).set({ isOwner: false }).where(eq(users.id, id));
+  };
+  const suspend = (id: string) => async (tx: DbTx) => {
+    await tx.update(users).set({ status: 'suspended' }).where(eq(users.id, id));
+  };
+
+  it('refuses a queued owner action once the owner has been demoted', async () => {
+    const a = await owner();
+    const b = await owner();
+    const sleeper = await seedUser(ctx, { role: 'affiliate' });
+    const [res] = await raceBehindLock(
+      [a.id, b.id],
+      () => [patch(a.cookie, sleeper.id, { role: 'super_manager', isOwner: true })],
+      demote(a.id),
+    );
+    expect(res!.statusCode).toBe(403);
+    expect(res!.json()).toEqual({ code: 'owner_required' });
+    const unchanged = await row(sleeper.id);
+    expect(unchanged.role).toBe('affiliate');
+    expect(unchanged.isOwner).toBe(false);
+    expect(await audits()).toHaveLength(0);
+    expect(await activeOwnerIds()).toEqual([b.id]);
+  });
+
+  it('refuses a queued owner action once the owner has been suspended', async () => {
+    const a = await owner();
+    const b = await owner();
+    const sleeper = await seedUser(ctx, { role: 'affiliate' });
+    const [res] = await raceBehindLock(
+      [a.id, b.id],
+      () => [patch(a.cookie, sleeper.id, { role: 'super_manager', isOwner: true })],
+      suspend(a.id),
+    );
+    expect(res!.statusCode).toBe(403);
+    expect(res!.json()).toEqual({ code: 'owner_required' });
+    expect((await row(sleeper.id)).role).toBe('affiliate');
+    expect(await audits()).toHaveLength(0);
+  });
+
+  it('refuses a queued creation of a super manager by a demoted owner', async () => {
+    const a = await owner();
+    const b = await owner();
+    const [res] = await raceBehindLock(
+      [a.id, b.id],
+      () => [create(a.cookie, { email: 'late@mail.com', fullName: 'Late Boss', role: 'super_manager', isOwner: true })],
+      demote(a.id),
+    );
+    expect(res!.statusCode).toBe(403);
+    expect(res!.json()).toEqual({ code: 'owner_required' });
+    expect(await ctx.db.select().from(users).where(eq(users.email, 'late@mail.com'))).toHaveLength(0);
+    expect(ctx.mailer.sent).toHaveLength(0);
+    expect(await audits()).toHaveLength(0);
+  });
+
+  it('refuses a queued edit by a non-owner whose users.manage grant was removed', async () => {
+    const boss = await owner();
+    const admin = await manager();
+    const aff = await seedUser(ctx, { role: 'affiliate' });
+    const [res] = await raceBehindLock(
+      [boss.id],
+      () => [patch(admin.cookie, aff.id, { fullName: 'Renamed Late' })],
+      async (tx) => {
+        await tx.delete(userPermissions).where(eq(userPermissions.userId, admin.id));
+      },
+    );
+    expect(res!.statusCode).toBe(403);
+    expect(res!.json()).toEqual({ code: 'forbidden' });
+    expect((await row(aff.id)).fullName).toBe('Test User');
+    expect(await audits()).toHaveLength(0);
+  });
+
+  it('refuses queued actions of a non-owner who was suspended meanwhile, on every route', async () => {
+    const boss = await owner();
+    const admin = await manager();
+    const aff = await seedUser(ctx, { role: 'affiliate' });
+    const invited = await seedUser(ctx, { role: 'affiliate', status: 'invited' });
+    const results = await raceBehindLock(
+      [boss.id],
+      () => [
+        create(admin.cookie, { email: 'late@mail.com', fullName: 'Late Hire', role: 'affiliate' }),
+        patch(admin.cookie, aff.id, { fullName: 'Renamed Late' }),
+        action(admin.cookie, aff.id, 'suspend'),
+        action(admin.cookie, aff.id, 'revoke-sessions'),
+        action(admin.cookie, invited.id, 'resend-invite'),
+      ],
+      suspend(admin.id),
+    );
+    for (const res of results) {
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ code: 'forbidden' });
+    }
+    expect((await row(aff.id)).status).toBe('active');
+    expect(await ctx.db.select().from(users).where(eq(users.email, 'late@mail.com'))).toHaveLength(0);
+    expect(ctx.mailer.sent).toHaveLength(0);
+    expect(await audits()).toHaveLength(0);
+  });
+
+  it('keeps the mutual demotion at one 200 and one 409 last_owner, and the three-owner cycle at one owner', async () => {
+    for (let i = 0; i < 4; i += 1) {
+      await ctx.db.update(users).set({ isOwner: false });
+      const a = await owner();
+      const b = await owner();
+      const results = await raceBehindLock([a.id, b.id], () => [
+        patch(b.cookie, a.id, { isOwner: false }),
+        patch(a.cookie, b.id, { isOwner: false }),
+      ]);
+      expect(sortedStatuses(results)).toEqual([200, 409]);
+      expect(results.find((r) => r.statusCode === 409)!.json()).toEqual({ code: 'last_owner' });
+      expect(await activeOwnerIds()).toHaveLength(1);
+    }
+    for (let i = 0; i < 4; i += 1) {
+      await ctx.db.update(users).set({ isOwner: false });
+      const a = await owner();
+      const b = await owner();
+      const c = await owner();
+      const results = await raceBehindLock([a.id, b.id, c.id], () => [
+        patch(a.cookie, b.id, { isOwner: false }),
+        patch(b.cookie, c.id, { isOwner: false }),
+        patch(c.cookie, a.id, { isOwner: false }),
+      ]);
+      // One of the three is demoted before it acts: it is told it is no longer an owner.
+      expect(results.filter((r) => r.statusCode === 200).length).toBeGreaterThanOrEqual(1);
+      for (const res of results) expect([200, 403, 409]).toContain(res.statusCode);
+      expect((await activeOwnerIds()).length).toBeGreaterThanOrEqual(1);
+    }
+  });
+});
+
+describe('resend-invite is one transaction (R12)', () => {
+  const tokensOf = (id: string) => ctx.db.select().from(authTokens).where(eq(authTokens.userId, id));
+
+  it('refuses a queued resend when the target became a super manager and the caller is no owner', async () => {
+    const boss = await owner();
+    const admin = await manager();
+    const invited = await seedUser(ctx, { role: 'affiliate', status: 'invited' });
+    const [res] = await raceBehindLock(
+      [boss.id],
+      () => [action(admin.cookie, invited.id, 'resend-invite')],
+      async (tx) => {
+        await tx.update(users).set({ role: 'super_manager' }).where(eq(users.id, invited.id));
+      },
+    );
+    expect(res!.statusCode).toBe(403);
+    expect(res!.json()).toEqual({ code: 'owner_required' });
+    expect(ctx.mailer.sent).toHaveLength(0);
+    expect(await tokensOf(invited.id)).toHaveLength(0);
+    expect(await auditsFor('user.invite_resent')).toHaveLength(0);
+  });
+
+  it('commits the new token and the audit row together, and mails after the commit', async () => {
+    const admin = await manager();
+    const invited = await seedUser(ctx, { role: 'affiliate', status: 'invited' });
+    const res = await action(admin.cookie, invited.id, 'resend-invite', { reason: 'lost the first mail' });
+    expect(res.statusCode).toBe(204);
+    expect(await tokensOf(invited.id)).toHaveLength(1);
+    const [entry] = await auditsFor('user.invite_resent', invited.id);
+    expect(entry!.reason).toBe('lost the first mail');
+    expect(entry!.actorUserId).toBe(admin.id);
+    expect(ctx.mailer.sent).toHaveLength(1);
+
+    // The older link is voided by the next resend.
+    expect((await action(admin.cookie, invited.id, 'resend-invite')).statusCode).toBe(204);
+    const tokens = await tokensOf(invited.id);
+    expect(tokens).toHaveLength(2);
+    expect(tokens.filter((t) => t.usedAt === null)).toHaveLength(1);
+  });
+
+  it('answers 502 mail_failed when the transport fails, keeping the audit row and trying once', async () => {
+    const admin = await manager();
+    const invited = await seedUser(ctx, { role: 'affiliate', status: 'invited' });
+    let attempts = 0;
+    const failing = {
+      sent: [],
+      async send() {
+        attempts += 1;
+        throw new Error('550 5.1.1 <someone@mail.com> mailbox unavailable');
+      },
+    };
+    const app = await buildApp({ config: ctx.config, db: ctx.db, mailer: failing, clock: ctx.clock });
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/users/${invited.id}/resend-invite`,
+        headers: { ...csrfHeaders(ctx), cookie: admin.cookie },
+        remoteAddress: freshAddress(),
+      });
+      expect(res.statusCode).toBe(502);
+      expect(res.json()).toEqual({ code: 'mail_failed' });
+    } finally {
+      await app.close();
+    }
+    expect(attempts).toBe(1);
+    expect(await auditsFor('user.invite_resent', invited.id)).toHaveLength(1);
+    // The token was issued but not delivered; the next resend replaces it.
+    expect(await tokensOf(invited.id)).toHaveLength(1);
   });
 });

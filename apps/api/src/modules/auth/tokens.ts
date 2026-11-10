@@ -4,6 +4,7 @@ import type { AppDeps } from '../../app';
 import type { DbExecutor } from '../../db/client';
 import { authTokens, users } from '../../db/schema';
 import { hashToken, newToken } from '../../lib/crypto';
+import type { Mail } from '../../mail/mailer';
 import { inviteMail, resetMail } from '../../mail/templates';
 
 export const INVITE_TTL_MS = 7 * 24 * 3600_000;
@@ -104,19 +105,31 @@ export async function peekToken(
 type MailDeps = Pick<AppDeps, 'db' | 'mailer' | 'config' | 'clock'>;
 type Recipient = { id: string; email: string; fullName: string; role: Role };
 
-function linkFor(deps: MailDeps, path: string, token: string): string {
+function linkFor(deps: Pick<MailDeps, 'config'>, path: string, token: string): string {
   return `${deps.config.appOrigin}${path}?token=${token}`;
 }
 
-/** Issues an invitation token and mails the activation link. Task 10 calls this after creating a user. */
-export async function sendInvite(deps: MailDeps, user: Recipient): Promise<void> {
-  const token = await issueToken(deps.db, { userId: user.id, type: 'invite', now: deps.clock() });
+/**
+ * Issues an invitation token (older unused ones stop working) and builds the mail that carries it,
+ * without sending it. Lets a caller issue the token inside its own transaction and send after commit.
+ */
+export async function issueInviteMail(
+  deps: Pick<MailDeps, 'config' | 'clock'>,
+  db: DbExecutor,
+  user: Recipient,
+): Promise<Mail> {
+  const token = await issueToken(db, { userId: user.id, type: 'invite', now: deps.clock() });
   const mail = inviteMail({
     fullName: user.fullName,
     link: linkFor(deps, '/invitation', token),
     roleLabel: ROLE_LABELS[user.role],
   });
-  await deps.mailer.send({ to: user.email, ...mail });
+  return { to: user.email, ...mail };
+}
+
+/** Issues an invitation token and mails the activation link. Task 10 calls this after creating a user. */
+export async function sendInvite(deps: MailDeps, user: Recipient): Promise<void> {
+  await deps.mailer.send(await issueInviteMail(deps, deps.db, user));
 }
 
 /** Issues a reset token (the user's earlier reset links stop working) and mails the link. */
