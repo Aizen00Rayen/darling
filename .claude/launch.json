@@ -4,8 +4,20 @@
     {
       "name": "web",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-lc", "export PATH=$HOME/.local/share/fnm/node-versions/v22.23.4/installation/bin:$PATH && pnpm --filter @darling/web dev"],
+      "runtimeArgs": [
+        "-lc",
+        "export PATH=$HOME/.local/share/fnm/node-versions/v22.23.4/installation/bin:$PATH && pnpm --filter @darling/web dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "export PATH=$HOME/.local/share/fnm/node-versions/v22.23.4/installation/bin:$PATH && pnpm --filter @darling/api dev"
+      ],
+      "port": 4000
     }
   ]
 }
