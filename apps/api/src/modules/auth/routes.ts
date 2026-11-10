@@ -3,20 +3,16 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { apiErrorSchema, loginInput, meSchema } from '@darling/shared';
 import type { AppDeps } from '../../app';
-import { apiError } from '../../plugins/errors';
+import { tooManyAttempts } from '../../plugins/errors';
 import { clearSessionCookie, setSessionCookie } from './cookie';
 import { attemptLogin } from './login';
 import { loadPrincipal, toMe } from './principal';
 import { revokeSession } from './sessions';
+import { accountSecurityRoutes } from './two-factor';
 
 const LOGIN_ATTEMPTS_PER_MINUTE = 5;
 
 const loginResponse = z.object({ user: meSchema });
-
-/** The 429 for login: a distinct code, and `Retry-After` is set by the rate limiter. */
-function tooManyAttempts() {
-  return apiError(429, 'too_many_attempts');
-}
 
 export async function authRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { config, db, clock } = deps;
@@ -58,6 +54,8 @@ export async function authRoutes(app: FastifyInstance, deps: AppDeps): Promise<v
       return reply.code(200).send({ user: outcome.me });
     },
   );
+
+  await app.register(accountSecurityRoutes, deps);
 
   typed.post(
     '/api/auth/logout',

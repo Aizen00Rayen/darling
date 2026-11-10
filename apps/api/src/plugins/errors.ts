@@ -22,6 +22,14 @@ export function apiError(statusCode: number, code: string): Error & { statusCode
   return Object.assign(new Error(code), { statusCode, apiCode: code });
 }
 
+/**
+ * The 429 body for routes that guard a credential check (login, password and 2FA verification):
+ * a distinct code. `Retry-After` is set by @fastify/rate-limit itself.
+ */
+export function tooManyAttempts(): Error & { statusCode: number; apiCode: string } {
+  return apiError(429, 'too_many_attempts');
+}
+
 function validationErrors(error: { validation: { instancePath: string; message?: string }[] }) {
   const errors: Record<string, string> = {};
   for (const issue of error.validation) {
