@@ -15,8 +15,6 @@ node_modules
 
 # next.js
 /.next/
-apps/*/.next
-apps/*/node_modules
 /out/
 
 # production
@@ -30,7 +28,6 @@ apps/*/node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
 .env
@@ -47,10 +44,12 @@ next-env.d.ts
 # superpowers scratch
 /.superpowers/
 
-# Playwright (apps/web)
-apps/web/e2e/.tmp/
-apps/web/playwright-report/
-apps/web/test-results/
+# local SQLite data (dev default DATA_DIR=./.data) and any database file
+/.data/
+/data/*.sqlite*
+*.sqlite
+*.sqlite-*
+*.sqlite3*
 
 # graphify knowledge graph output
 /graphify-out/
