@@ -1,3 +1,4 @@
+import { PHONE_ERROR, normalizePhone } from '@darling/shared';
 import { z } from 'zod';
 import { getWilaya, type DeliveryMode } from '@/data/delivery';
 import { getProduct } from '@/data/products';
@@ -7,7 +8,7 @@ export type OrderInput = {
   shadeCode: string;
   quantity: number;
   fullName: string;
-  /** Normalised: no whitespace. */
+  /** Normalised by `normalizePhone`: local `0[567]xxxxxxxx` form. */
   phone: string;
   wilayaCode: number;
   commune: string;
@@ -18,8 +19,7 @@ export type OrderInput = {
 
 export type FieldErrors = Partial<Record<keyof OrderInput, string>>;
 
-export const PHONE_ERROR = 'Saisissez un numéro algérien valide (10 chiffres ou +213).';
-const PHONE_PATTERN = /^(?:0[567]\d{8}|\+213[567]\d{8})$/;
+export { PHONE_ERROR };
 
 const text = (label: string, min: number, max: number) =>
   z
@@ -39,8 +39,8 @@ export const orderSchema = z
     fullName: text('Le nom', 2, 120),
     phone: z
       .string({ error: PHONE_ERROR })
-      .transform((value) => value.replace(/\s/g, ''))
-      .refine((value) => PHONE_PATTERN.test(value), PHONE_ERROR),
+      .refine((value) => normalizePhone(value) !== null, PHONE_ERROR)
+      .transform((value) => normalizePhone(value) as string),
     wilayaCode: z.number({ error: 'Choisissez votre wilaya.' }).int('Choisissez votre wilaya.'),
     commune: text('La commune', 2, 120),
     mode: z.enum(['desk', 'home'], { error: 'Choisissez un mode de livraison.' }),
