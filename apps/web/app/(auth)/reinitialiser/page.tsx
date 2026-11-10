@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { InvalidLink } from '@/components/auth/InvalidLink';
 import { SetPasswordForm } from '@/components/auth/SetPasswordForm';
 
-export const metadata: Metadata = { title: 'Nouveau mot de passe — Darling', robots: { index: false } };
+export const metadata: Metadata = { title: 'Nouveau mot de passe — Darling', robots: { index: false }, referrer: 'no-referrer' };
 
 export default function ReinitialiserPage({ searchParams }: PageProps<'/reinitialiser'>) {
   return (

@@ -1,8 +1,16 @@
 import { Suspense } from 'react';
 import type { Metadata } from 'next';
+import Link from 'next/link';
+import { z } from 'zod';
+import { Notice } from '@darling/ui';
 import { InvalidLink } from '@/components/auth/InvalidLink';
 import { SetPasswordForm } from '@/components/auth/SetPasswordForm';
 import { apiServer } from '@/lib/api/server';
+import { MESSAGES } from '@/lib/auth/messages';
+
+// Same format the API issues; checked before the token is put into an API path.
+const TOKEN_FORMAT = /^[A-Za-z0-9_-]{43}$/;
+const inviteSchema = z.object({ email: z.string(), fullName: z.string() });
 
 export const metadata: Metadata = {
   title: 'Invitation — Darling',
@@ -22,19 +30,36 @@ async function Content({ searchParams }: { searchParams: PageProps<'/invitation'
   const sp = await searchParams;
   const token = typeof sp.token === 'string' ? sp.token : '';
   const title = 'Activer mon compte';
-  if (!token) return <InvalidLink title={title} />;
+  if (!TOKEN_FORMAT.test(token)) return <InvalidLink title={title} />;
 
-  const res = await apiServer<{ email: string; fullName: string }>(`/api/auth/invite/${encodeURIComponent(token)}`);
+  const res = await apiServer<unknown>(`/api/auth/invite/${token}`);
   if (!res.ok) {
-    // 404 means unknown/used/expired; anything else (API down) is also not actionable for the visitor.
-    return <InvalidLink title={title} />;
+    if (res.status === 404) return <InvalidLink title={title} />;
+    return (
+      <>
+        <h1 className="auth-title">{title}</h1>
+        <Notice tone="error">{MESSAGES.generic}</Notice>
+        <div className="auth-links">
+          <Link href={`/invitation?token=${token}`}>Réessayer</Link>
+        </div>
+      </>
+    );
+  }
+  const invite = inviteSchema.safeParse(res.data);
+  if (!invite.success) {
+    return (
+      <>
+        <h1 className="auth-title">{title}</h1>
+        <Notice tone="error">{MESSAGES.generic}</Notice>
+      </>
+    );
   }
   return (
     <SetPasswordForm
       mode="invite"
       token={token}
-      username={res.data.email}
-      title={`Bienvenue, ${res.data.fullName}`}
+      username={invite.data.email}
+      title={`Bienvenue, ${invite.data.fullName}`}
       lead="Choisissez un mot de passe pour activer votre compte."
     />
   );

@@ -16,13 +16,13 @@
   "dependencies": {
     "@darling/shared": "workspace:*",
     "@darling/ui": "workspace:*",
+    "@next/env": "16.4.6",
     "next": "16.4.6",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@next/env": "16.4.6",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
