@@ -23,6 +23,7 @@ const DESCRIPTIONS: Record<string, string> = {
   '/admin/utilisateurs': 'Inviter, modifier et suspendre les comptes.',
   '/admin/journal': 'Actions d’administration et connexions.',
   '/admin/parametres': 'Sécurité et informations de l’entreprise.',
+  '/admin/diagnostics': 'Adresse IP, sauvegardes, e-mails et état du serveur.',
   '/compte/securite': 'Mot de passe et double authentification.',
 };
 
@@ -36,7 +37,7 @@ export default function AdminHome() {
 
 async function Content() {
   const me = await requireAdmin();
-  const links = navFor(me.role, me.permissions).filter((item) => item.href !== '/admin');
+  const links = navFor(me.role, me.permissions, { isOwner: me.isOwner }).filter((item) => item.href !== '/admin');
   return (
     <div className="p-stack p-stack--lg">
       <PageHeader eyebrow="Administration" title={`Bonjour, ${firstName(me.fullName)}`} />

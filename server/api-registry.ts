@@ -2,6 +2,11 @@ import type { Access, RouteHandler } from './security/access';
 import { getServerContext } from './context';
 import { json } from './http';
 import * as health from '@/app/api/health/route';
+import * as backups from '@/app/api/backups/route';
+import * as backupsLatest from '@/app/api/backups/latest/route';
+import * as cronBackup from '@/app/api/cron/backup/route';
+import * as diagnostics from '@/app/api/diagnostics/route';
+import * as diagnosticsTestMail from '@/app/api/diagnostics/test-mail/route';
 import * as login from '@/app/api/auth/login/route';
 import * as logout from '@/app/api/auth/logout/route';
 import * as me from '@/app/api/auth/me/route';
@@ -76,6 +81,11 @@ function route(pattern: string, mod: { access: RouteAccess } & Partial<Record<Me
 
 export const ROUTES: readonly RegisteredRoute[] = [
   route('/api/health', health),
+  route('/api/backups', backups),
+  route('/api/backups/latest', backupsLatest),
+  route('/api/cron/backup', cronBackup),
+  route('/api/diagnostics', diagnostics),
+  route('/api/diagnostics/test-mail', diagnosticsTestMail),
   route('/api/affiliate/click', affiliateClick),
   route('/api/affiliates', affiliates),
   route('/api/affiliates/:id', affiliateById),
@@ -168,7 +178,7 @@ export interface CallApiOptions {
   /** The CURRENT user's Cookie header, forwarded as is. */
   cookieHeader: string;
   /** The incoming request's client-address headers, so in-process calls carry the real client address. */
-  clientHeaders?: { 'x-forwarded-for'?: string | null; 'x-real-ip'?: string | null };
+  clientHeaders?: Partial<Record<'x-forwarded-for' | 'x-real-ip' | 'forwarded' | 'cf-connecting-ip', string | null>>;
 }
 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -222,7 +232,7 @@ export async function callApi(path: string, init: CallApiInit, opts: CallApiOpti
 
   const headers = new Headers({ Origin: config.appOrigin, 'X-Requested-With': 'fetch', Accept: 'application/json' });
   if (opts.cookieHeader) headers.set('Cookie', opts.cookieHeader);
-  for (const name of ['x-forwarded-for', 'x-real-ip'] as const) {
+  for (const name of ['x-forwarded-for', 'x-real-ip', 'forwarded', 'cf-connecting-ip'] as const) {
     const value = opts.clientHeaders?.[name];
     if (value) headers.set(name, value);
   }

@@ -6,6 +6,8 @@ import { getServerContext, type ServerContext } from '../context';
 import { json } from '../http';
 import { logError } from '../log';
 import { clientIp, noteClientIp } from '../net/client-ip';
+import { bearerMatches, bearerTokenOf } from './bearer';
+import { LIMITS, rateLimited } from './rate-limit';
 
 export { json, noContent, parseBody, validationFailed } from '../http';
 export type { AuthContext } from '../auth/principal';
@@ -86,6 +88,17 @@ function csrfOk(request: Request, appOrigin: string): boolean {
   return request.headers.get('x-requested-with') === 'fetch' && request.headers.get('origin') === appOrigin;
 }
 
+export interface WithAccessOptions {
+  /**
+   * `'bearer'`: for a MACHINE call (the hPanel cron job) on a PUBLIC route. Instead of the browser CSRF check the
+   * request must carry `Authorization: Bearer <CRON_TOKEN>`, and any request that carries an `Origin` header (that
+   * is, any browser request) is refused. Order: no CRON_TOKEN configured -> 404; Origin present -> 403 `csrf`;
+   * rate limit (10 an hour per client address, failures included) -> 429; wrong/missing token -> 401; handler.
+   * Default (`'origin'`): Origin + `X-Requested-With` as before.
+   */
+  csrf?: 'origin' | 'bearer';
+}
+
 /**
  * Wraps a route handler with the whole request pipeline, in this order:
  *  1. CSRF (non-GET/HEAD/OPTIONS), before anything else is looked at
@@ -97,13 +110,32 @@ function csrfOk(request: Request, appOrigin: string): boolean {
 export function withAccess<A extends Access, P = Record<string, string>>(
   access: A,
   handler: (args: HandlerArgs<P, A>) => Response | Promise<Response>,
+  options: WithAccessOptions = {},
 ): RouteHandler<P> {
+  const bearerMode = options.csrf === 'bearer';
+  if (bearerMode && access.kind !== 'public') throw new Error("withAccess: csrf 'bearer' is only available on public routes");
   return async (request, routeCtx) => {
     try {
       // First touch of the request: under Next's build-time prerender pass this is what marks the route dynamic,
       // before any configuration or database is read.
       const cookieHeader = request.headers.get('cookie');
       const ctx = getServerContext();
+
+      if (bearerMode) {
+        const expected = ctx.config.cronToken;
+        if (!expected) return json(404, { code: 'not_found' }); // disabled: indistinguishable from an unknown route
+        if (request.headers.has('origin')) return json(403, { code: 'csrf' }); // a browser: never a machine call
+        const ip = clientIp(request.headers, undefined, ctx.config.trustedProxyHops);
+        const limited = rateLimited(ctx, LIMITS.cron, ip);
+        if (limited) return limited;
+        if (!bearerMatches(bearerTokenOf(request.headers.get('authorization')), expected)) {
+          return json(401, { code: 'unauthenticated' }, { 'WWW-Authenticate': 'Bearer' });
+        }
+        const params = await routeCtx.params;
+        noteClientIp(ip, ctx.config);
+        const response = await handler({ request, params, auth: null as AuthFor<A>, ctx, ip, requestId: randomUUID() });
+        return mutable(response);
+      }
 
       if (!SAFE_METHODS.has(request.method) && !csrfOk(request, ctx.config.appOrigin)) {
         return json(403, { code: 'csrf' });

@@ -41,3 +41,14 @@ describe('resetMail', () => {
     expect(m.html).not.toContain('<img');
   });
 });
+
+describe('testMail', () => {
+  it('is French, mentions the origin and escapes the name', async () => {
+    const { testMail } = await import('./templates');
+    const m = testMail({ fullName: '<b>Aya</b>', origin: 'https://darling7.store' });
+    expect(m.subject).toBe('DARLING* : e-mail de test');
+    expect(m.text).toContain('https://darling7.store');
+    expect(m.html).not.toContain('<b>Aya</b>');
+    expect(m.html).toContain('&lt;b&gt;Aya&lt;/b&gt;');
+  });
+});

@@ -39,6 +39,8 @@ export interface Db {
 
 export interface OpenOptions {
   driver?: DriverName;
+  /** Open an existing file read-only; no pragma is run (so a backup copy is never modified, not even its journal mode). */
+  readOnly?: boolean;
 }
 
 interface RawStatement {
@@ -51,14 +53,14 @@ interface RawDatabase {
   prepare(sql: string): RawStatement;
   close(): void;
 }
-type RawFactory = (file: string) => RawDatabase;
+type RawFactory = (file: string, readOnly: boolean) => RawDatabase;
 
 const PRAGMAS = ['PRAGMA journal_mode = WAL', 'PRAGMA foreign_keys = ON', 'PRAGMA busy_timeout = 5000', 'PRAGMA synchronous = NORMAL'];
 const STATEMENT_CACHE_LIMIT = 200;
 
 // --- drivers -------------------------------------------------------------------------------------------------
 
-function loadNodeSqlite(): { DatabaseSync: new (file: string) => RawDatabase } | undefined {
+function loadNodeSqlite(): { DatabaseSync: new (file: string, options?: { readOnly?: boolean }) => RawDatabase } | undefined {
   const original = process.emitWarning;
   process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
     const text = typeof warning === 'string' ? warning : warning.message;
@@ -78,14 +80,14 @@ function loadNodeSqlite(): { DatabaseSync: new (file: string) => RawDatabase } |
 function nodeSqliteFactory(): RawFactory | undefined {
   const mod = loadNodeSqlite();
   if (!mod?.DatabaseSync) return undefined;
-  return (file) => new mod.DatabaseSync(file);
+  return (file, readOnly) => (readOnly ? new mod.DatabaseSync(file, { readOnly: true }) : new mod.DatabaseSync(file));
 }
 
 function betterSqliteFactory(): RawFactory | undefined {
   try {
     const req = createRequire(path.join(process.cwd(), 'noop.js'));
-    const BetterSqlite = req('better-sqlite3') as new (file: string) => RawDatabase;
-    return (file) => new BetterSqlite(file);
+    const BetterSqlite = req('better-sqlite3') as new (file: string, options?: { readonly?: boolean; fileMustExist?: boolean }) => RawDatabase;
+    return (file, readOnly) => (readOnly ? new BetterSqlite(file, { readonly: true, fileMustExist: true }) : new BetterSqlite(file));
   } catch {
     return undefined;
   }
@@ -231,7 +233,8 @@ function wrap(raw: RawDatabase): Db {
 }
 
 export function openDatabase(file: string, options: OpenOptions = {}): Db {
-  const raw = pickFactory(options.driver)(file);
+  const raw = pickFactory(options.driver)(file, options.readOnly === true);
+  if (options.readOnly === true) return wrap(raw);
   try {
     for (const pragma of PRAGMAS) raw.exec(pragma);
   } catch (err) {
@@ -239,4 +242,10 @@ export function openDatabase(file: string, options: OpenOptions = {}): Db {
     throw err;
   }
   return wrap(raw);
+}
+
+/** The driver `openDatabase` uses by default on this machine (node:sqlite first, then better-sqlite3). */
+export function defaultDriverName(): DriverName | 'none' {
+  if (nodeSqliteFactory()) return 'node:sqlite';
+  return betterSqliteFactory() ? 'better-sqlite3' : 'none';
 }

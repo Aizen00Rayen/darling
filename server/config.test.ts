@@ -227,3 +227,40 @@ describe('loadConfig production guard rails', () => {
     expect(loadConfig({ ENCRYPTION_KEY: KEY, DATA_DIR: path.join(cwd, 'data') }, { cwd }).dataDir).toBe(path.join(cwd, 'data'));
   });
 });
+
+describe('CRON_TOKEN, BACKUP_KEEP and MAIL_OUTBOX_DIR', () => {
+  const token = 'c'.repeat(40);
+
+  it('CRON_TOKEN is optional (cron disabled) and must be 32 to 200 printable characters', () => {
+    expect(loadConfig({ ENCRYPTION_KEY: KEY }).cronToken).toBeUndefined();
+    expect(loadConfig({ ENCRYPTION_KEY: KEY, CRON_TOKEN: '  ' }).cronToken).toBeUndefined();
+    expect(loadConfig({ ENCRYPTION_KEY: KEY, CRON_TOKEN: ` ${token} ` }).cronToken).toBe(token);
+    for (const bad of ['short', 'a'.repeat(31), 'a'.repeat(201), `${'a'.repeat(31)} b`, `${'a'.repeat(40)}\n`.replace('\n', 'é')]) {
+      expect(errorOf({ ENCRYPTION_KEY: KEY, CRON_TOKEN: bad }).keys).toEqual(['CRON_TOKEN']);
+    }
+  });
+
+  it('the error never contains the token value', () => {
+    expect(errorOf({ ENCRYPTION_KEY: KEY, CRON_TOKEN: 'secret-too-short' }).message).not.toContain('secret-too-short');
+  });
+
+  it('BACKUP_KEEP defaults to 14 and accepts 1 to 365', () => {
+    expect(loadConfig({ ENCRYPTION_KEY: KEY }).backupKeep).toBe(14);
+    expect(loadConfig({ ENCRYPTION_KEY: KEY, BACKUP_KEEP: '30' }).backupKeep).toBe(30);
+    for (const bad of ['0', '-1', '366', 'abc', '1.5', '']) {
+      if (bad === '') expect(loadConfig({ ENCRYPTION_KEY: KEY, BACKUP_KEEP: bad }).backupKeep).toBe(14);
+      else expect(errorOf({ ENCRYPTION_KEY: KEY, BACKUP_KEEP: bad }).keys).toEqual(['BACKUP_KEEP']);
+    }
+  });
+
+  it('MAIL_OUTBOX_DIR is accepted outside production and resolved to an absolute path', () => {
+    expect(loadConfig({ ENCRYPTION_KEY: KEY }).mailOutboxDir).toBeUndefined();
+    expect(loadConfig({ ENCRYPTION_KEY: KEY, MAIL_OUTBOX_DIR: 'out/mail' }, { cwd: '/srv/app' }).mailOutboxDir).toBe('/srv/app/out/mail');
+    expect(loadConfig({ ENCRYPTION_KEY: KEY, NODE_ENV: 'test', MAIL_OUTBOX_DIR: '/tmp/x' }).mailOutboxDir).toBe('/tmp/x');
+  });
+
+  it('MAIL_OUTBOX_DIR is a configuration error in production', () => {
+    const err = errorOf(prod({ MAIL_OUTBOX_DIR: '/tmp/outbox' }));
+    expect(err.keys).toEqual(['MAIL_OUTBOX_DIR']);
+  });
+});

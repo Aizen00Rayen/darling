@@ -36,7 +36,7 @@ export function PortalFrame(props: Props) {
 
 async function Gate({ roles, allowDuring2faEnrollment, children }: Props) {
   const me = await requireUser(roles, { allowDuring2faEnrollment: allowDuring2faEnrollment ?? false });
-  const nav = navFor(me.role, me.permissions, { enrolling: me.mustEnroll2fa });
+  const nav = navFor(me.role, me.permissions, { enrolling: me.mustEnroll2fa, isOwner: me.isOwner });
   return (
     <PortalShell nav={nav} user={{ fullName: me.fullName, roleLabel: ROLE_LABELS[me.role] }}>
       {me.mustEnroll2fa ? (

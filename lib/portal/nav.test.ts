@@ -50,6 +50,17 @@ describe('navFor', () => {
     ]);
   });
 
+  it('shows Diagnostic to owners only, after Paramètres and before Mon compte', () => {
+    const all = ['users.manage', 'audit.read', 'settings.manage'] as const;
+    expect(labels(navFor('super_manager', all, { isOwner: true }))).toEqual(['Tableau de bord', 'Utilisateurs', 'Journal', 'Paramètres', 'Diagnostic', 'Mon compte']);
+    expect(navFor('super_manager', all, { isOwner: true }).find((i) => i.label === 'Diagnostic')?.href).toBe('/admin/diagnostics');
+    expect(labels(navFor('super_manager', all))).not.toContain('Diagnostic');
+    expect(labels(navFor('super_manager', all, { isOwner: false }))).not.toContain('Diagnostic');
+    expect(labels(navFor('affiliate', [], { isOwner: true }))).not.toContain('Diagnostic');
+    expect(labels(navFor('sub_manager', [], { isOwner: true }))).not.toContain('Diagnostic');
+    expect(navFor('super_manager', all, { isOwner: true, enrolling: true })).toEqual([]);
+  });
+
   it('gives no links while 2FA enrolment is pending', () => {
     expect(navFor('super_manager', ['users.manage'], { enrolling: true })).toEqual([]);
   });

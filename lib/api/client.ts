@@ -1,6 +1,6 @@
 export type ApiResult<T> =
   | { ok: true; data: T }
-  | { ok: false; status: number; code: string; errors?: Record<string, string> };
+  | { ok: false; status: number; code: string; errors?: Record<string, string>; reason?: string };
 
 export type ApiInit = { method?: string; body?: unknown };
 
@@ -18,8 +18,9 @@ export async function toApiResult<T>(res: Response): Promise<ApiResult<T>> {
   if (res.ok) return { ok: true, data: json as T };
 
   if (json && typeof json === 'object' && typeof (json as { code?: unknown }).code === 'string') {
-    const { code, errors } = json as { code: string; errors?: unknown };
+    const { code, errors, reason } = json as { code: string; errors?: unknown; reason?: unknown };
     const result: ApiResult<T> = { ok: false, status: res.status, code };
+    if (typeof reason === 'string') result.reason = reason;
     if (errors && typeof errors === 'object' && !Array.isArray(errors)) {
       result.errors = errors as Record<string, string>;
     }

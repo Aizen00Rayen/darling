@@ -68,7 +68,6 @@ const auditsFor = (action: string, entityId?: string) => audits().filter((a) => 
 const liveSessions = (userId: string) =>
   app.db.get<{ n: number }>('SELECT count(*) AS n FROM sessions WHERE user_id = ? AND revoked_at IS NULL', userId)?.n ?? 0;
 const grantsOf = (id: string) => app.db.all<{ permission: string }>('SELECT permission FROM user_permissions WHERE user_id = ? ORDER BY permission', id).map((r) => r.permission);
-const activeOwnerIds = () => app.db.all<{ id: string }>("SELECT id FROM users WHERE is_owner = 1 AND status = 'active'").map((r) => r.id);
 const json = async (res: Response) => (await res.json()) as Record<string, unknown>;
 
 describe('POST /api/users', () => {

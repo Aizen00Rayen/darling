@@ -103,3 +103,26 @@ export function resetMail(p: { fullName: string; link: string }): Omit<Mail, 'to
   });
   return { subject, text, html };
 }
+
+/** The diagnostics test mail: proves the SMTP settings work. Contains no secret and no one-time link. */
+export function testMail(p: { fullName: string; origin: string }): Omit<Mail, 'to'> {
+  const subject = 'DARLING* : e-mail de test';
+  const text = [
+    `Bonjour ${p.fullName},`,
+    '',
+    'Ceci est un e-mail de test envoyé depuis la page Diagnostic. Si vous le lisez, l’envoi d’e-mails fonctionne.',
+    '',
+    p.origin,
+    '',
+    'DARLING*',
+  ].join('\n');
+  const html = layout({
+    title: subject,
+    fullName: p.fullName,
+    paragraphs: ['Ceci est un e-mail de test envoyé depuis la page Diagnostic. Si vous le lisez, l’envoi d’e-mails fonctionne.'],
+    buttonLabel: 'Ouvrir DARLING*',
+    link: p.origin,
+    footer: 'Aucune action n’est nécessaire.',
+  });
+  return { subject, text, html };
+}

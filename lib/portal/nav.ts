@@ -4,6 +4,9 @@ import { homePathFor } from '@/shared';
 
 const ACCOUNT: NavItem = { href: '/compte/securite', label: 'Mon compte' };
 
+/** Owner only (access rule `owner` on /api/diagnostics): runtime, proxy and storage checks, backups. */
+const DIAGNOSTICS: NavItem = { href: '/admin/diagnostics', label: 'Diagnostic' };
+
 const ADMIN_PAGES: { item: NavItem; permission: Permission }[] = [
   { item: { href: '/admin/commandes', label: 'Commandes' }, permission: 'orders.read' },
   { item: { href: '/admin/influenceuses', label: 'Influenceuses' }, permission: 'commissions.manage' },
@@ -14,9 +17,10 @@ const ADMIN_PAGES: { item: NavItem; permission: Permission }[] = [
 ];
 
 /** Navigation for a role; super manager pages are filtered by permission. No links while enrolling in 2FA. */
-export function navFor(role: Role, permissions: readonly Permission[], options: { enrolling?: boolean } = {}): NavItem[] {
+export function navFor(role: Role, permissions: readonly Permission[], options: { enrolling?: boolean; isOwner?: boolean } = {}): NavItem[] {
   if (options.enrolling) return [];
   const home: NavItem = { href: homePathFor(role), label: 'Tableau de bord' };
   if (role !== 'super_manager') return [home, ACCOUNT];
-  return [home, ...ADMIN_PAGES.filter((p) => permissions.includes(p.permission)).map((p) => p.item), ACCOUNT];
+  const owner = options.isOwner === true ? [DIAGNOSTICS] : [];
+  return [home, ...ADMIN_PAGES.filter((p) => permissions.includes(p.permission)).map((p) => p.item), ...owner, ACCOUNT];
 }

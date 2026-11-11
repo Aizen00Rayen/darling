@@ -30,6 +30,9 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     smtpUrl: undefined,
     mailFrom: undefined,
     setupToken: undefined,
+    cronToken: undefined,
+    backupKeep: 14,
+    mailOutboxDir: undefined,
     ...overrides,
   };
 }

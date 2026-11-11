@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Permission } from '@/shared';
@@ -39,6 +40,8 @@ interface Row {
   allowed: number[];
   /** Exact refusal for everyone refused, besides the code. */
   consumes?: boolean;
+  /** Extra headers for the row (null removes a default one). */
+  headers?: Record<string, string | null>;
 }
 
 const TOKEN = 'm'.repeat(43);
@@ -53,8 +56,19 @@ const PAYOUTS = { permission: 'payouts.manage' as const, verdicts: PERMISSION_RO
 // Role routes: only that role gets in (and a super manager still enrolling is told to enrol first), nobody else, not even owners.
 const ONLY_AFFILIATE: Verdict[] = ['U', 'ok', 'F', 'F', 'F', 'F', 'E'];
 const ONLY_SUB_MANAGER: Verdict[] = ['U', 'F', 'ok', 'F', 'F', 'F', 'E'];
+// Owner-only routes (`access: { kind: 'owner' }`): the owner alone; a super manager holding permissions is refused too.
+const OWNER_ONLY_ROUTE: Verdict[] = ['U', 'F', 'F', 'F', 'F', 'ok', 'E'];
+const CRON_TOKEN = 'm'.repeat(40);
 const MATRIX: Row[] = [
   { route: '/api/health', method: 'GET', verdicts: ALL_OK, allowed: [200] },
+  // The cron route is public but guarded by the bearer token (csrf: 'bearer'): browser headers are NOT sent here,
+  // the token is, so every principal "gets in" exactly like the cron job; the 401/403/404 cases are in bearer.test.ts.
+  { route: '/api/cron/backup', method: 'POST', headers: { Origin: null, 'X-Requested-With': null, Authorization: `Bearer ${CRON_TOKEN}` }, verdicts: ALL_OK, allowed: [200] },
+  // owner only
+  { route: '/api/diagnostics', method: 'GET', verdicts: OWNER_ONLY_ROUTE, allowed: [200] },
+  { route: '/api/diagnostics/test-mail', method: 'POST', verdicts: OWNER_ONLY_ROUTE, allowed: [200] },
+  { route: '/api/backups', method: 'POST', verdicts: OWNER_ONLY_ROUTE, allowed: [200] },
+  { route: '/api/backups/latest', method: 'GET', verdicts: OWNER_ONLY_ROUTE, allowed: [200, 404] },
   // /api/orders has per-method access: the storefront POST is public, the staff list needs orders.read.
   { route: '/api/orders', method: 'POST', body: {}, verdicts: ALL_OK, allowed: [400] },
   // The influenceuse link was opened: public (CSRF headers still required), silent for unknown codes.
@@ -173,6 +187,7 @@ describe('route files', () => {
 
 describe('access matrix', () => {
   let app: TestApp;
+  let dataDir: string;
   const OTHER_PERMISSIONS: Permission[] = ['users.manage', 'audit.read', 'settings.manage', 'orders.read', 'orders.write', 'commissions.manage', 'payouts.manage'];
 
   async function freshCookie(p: Principal, permission?: Permission): Promise<string | undefined> {
@@ -203,9 +218,13 @@ describe('access matrix', () => {
   }
 
   beforeAll(() => {
-    app = createTestApp();
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'darling-matrix-'));
+    app = createTestApp({ config: { dataDir, cronToken: CRON_TOKEN } });
   });
-  afterAll(() => app.close());
+  afterAll(() => {
+    app.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
 
   for (const row of MATRIX) {
     describe(`${row.method} ${row.route}`, () => {
@@ -213,7 +232,7 @@ describe('access matrix', () => {
         app.limiter.reset();
         const cookie = row.consumes ? await freshCookie(principal as Principal, row.permission) : await cookieFor(principal as Principal, row.permission);
         const body = row.method === 'GET' ? undefined : (row.body ?? undefined);
-        const res = await app.call(row.path ?? row.route, { method: row.method, body, cookie });
+        const res = await app.call(row.path ?? row.route, { method: row.method, body, cookie, headers: row.headers });
         const text = await res.text();
         if (verdict === 'O') {
           // permitted by the route's permission, refused by the handler's owner rule, before any validation

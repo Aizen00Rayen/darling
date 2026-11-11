@@ -23,6 +23,12 @@ export interface Config {
   mailFrom: string | undefined;
   /** One-time setup token (>= 32 characters). Unset = the first-run setup page is disabled. */
   setupToken: string | undefined;
+  /** Bearer token of the machine-called cron routes (>= 32 characters). Unset = those routes answer 404. */
+  cronToken: string | undefined;
+  /** How many dated backup files to keep (BACKUP_KEEP, default 14). */
+  backupKeep: number;
+  /** Development/test only: the mailer also writes each mail as a JSON file in this directory. Never set in production. */
+  mailOutboxDir: string | undefined;
 }
 
 export interface ConfigIssue {
@@ -46,6 +52,9 @@ type Env = Record<string, string | undefined>;
 
 export const SETUP_TOKEN_MIN = 32;
 export const SETUP_TOKEN_MAX = 200;
+export const CRON_TOKEN_MIN = 32;
+export const CRON_TOKEN_MAX = 200;
+export const DEFAULT_BACKUP_KEEP = 14;
 const DEFAULT_ORIGIN = 'http://localhost:3000';
 const DEV_DATA_DIR = '.data';
 // Deterministic, public, throwaway key used only when NODE_ENV=test and no key is given.
@@ -75,6 +84,9 @@ const schema = z.object({
   SMTP_URL: z.string().optional(),
   MAIL_FROM: z.string().optional(),
   SETUP_TOKEN: z.string().optional(),
+  CRON_TOKEN: z.string().optional(),
+  BACKUP_KEEP: z.string().optional(),
+  MAIL_OUTBOX_DIR: z.string().optional(),
 });
 
 function parseOrigin(value: string): string | null {
@@ -216,6 +228,44 @@ export function loadConfig(env: Env, options: { cwd?: string } = {}): Config {
     else bad('SETUP_TOKEN', `must be ${SETUP_TOKEN_MIN} to ${SETUP_TOKEN_MAX} printable characters without spaces (generate one with: openssl rand -hex 32)`);
   }
 
+  // CRON_TOKEN: bearer token for POST /api/cron/backup (hPanel cron + curl). Unset = the route does not exist (404).
+  let cronToken: string | undefined;
+  if (!empty(raw.CRON_TOKEN)) {
+    const v = raw.CRON_TOKEN!.trim();
+    if (v.length >= CRON_TOKEN_MIN && v.length <= CRON_TOKEN_MAX && /^[\x21-\x7e]+$/.test(v)) cronToken = v;
+    else bad('CRON_TOKEN', `must be ${CRON_TOKEN_MIN} to ${CRON_TOKEN_MAX} printable characters without spaces (generate one with: openssl rand -hex 32)`);
+  }
+
+  // BACKUP_KEEP
+  let backupKeep = DEFAULT_BACKUP_KEEP;
+  if (!empty(raw.BACKUP_KEEP)) {
+    const v = raw.BACKUP_KEEP!.trim();
+    if (/^\d{1,3}$/.test(v) && Number(v) >= 1 && Number(v) <= 365) backupKeep = Number(v);
+    else bad('BACKUP_KEEP', 'must be an integer from 1 to 365');
+  }
+
+  // MAIL_OUTBOX_DIR: a plain-text copy of every mail (with its one-time links) is a credential store. Tests only.
+  let mailOutboxDir: string | undefined;
+  if (!empty(raw.MAIL_OUTBOX_DIR)) {
+    if (isProduction) bad('MAIL_OUTBOX_DIR', 'must not be set in production (it would store invitation and reset links in clear text)');
+    else mailOutboxDir = path.resolve(cwd, raw.MAIL_OUTBOX_DIR!.trim());
+  }
+
   if (issues.length > 0) throw new ConfigError(issues);
-  return { nodeEnv, isProduction, appOrigin, cookieSecure, dataDir, allowDataInAppDir, encryptionKey, trustedProxyHops, smtpUrl, mailFrom, setupToken };
+  return {
+    nodeEnv,
+    isProduction,
+    appOrigin,
+    cookieSecure,
+    dataDir,
+    allowDataInAppDir,
+    encryptionKey,
+    trustedProxyHops,
+    smtpUrl,
+    mailFrom,
+    setupToken,
+    cronToken,
+    backupKeep,
+    mailOutboxDir,
+  };
 }

@@ -15,7 +15,13 @@ export async function apiServer<T>(path: string, init: ApiInit = {}): Promise<Ap
   // cookies() is outside the try: during prerendering it signals "dynamic" by throwing, which must propagate.
   const cookieHeader = (await cookies()).toString();
   const incoming = await headers();
-  const clientHeaders = { 'x-forwarded-for': incoming.get('x-forwarded-for'), 'x-real-ip': incoming.get('x-real-ip') };
+  const clientHeaders = {
+    'x-forwarded-for': incoming.get('x-forwarded-for'),
+    'x-real-ip': incoming.get('x-real-ip'),
+    // Only the owner's diagnostics page looks at these two; they never influence the derived address.
+    forwarded: incoming.get('forwarded'),
+    'cf-connecting-ip': incoming.get('cf-connecting-ip'),
+  };
   await connection(); // request-time: handlers read the clock and the database
   try {
     const res = await callApi(path, init, { cookieHeader, clientHeaders });

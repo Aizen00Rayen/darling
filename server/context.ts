@@ -2,6 +2,7 @@ import { loadConfig, type Config } from './config';
 import { systemClock, type Clock } from './clock';
 import { getDb } from './db';
 import type { Db } from './db/sqlite';
+import { fileOutboxMailer } from './mail/file-outbox';
 import { consoleMailer, smtpMailer, type LogFn, type Mailer } from './mail/mailer';
 import { createRateLimiter, type RateLimiter } from './security/rate-limit';
 
@@ -18,7 +19,12 @@ export interface ServerContext {
 
 const DEFAULT_MAIL_FROM = 'DARLING* <no-reply@darling7.store>';
 
-export function buildMailer(config: Pick<Config, 'nodeEnv' | 'smtpUrl' | 'mailFrom'>, logFn?: LogFn): Mailer {
+export function buildMailer(config: Pick<Config, 'nodeEnv' | 'smtpUrl' | 'mailFrom'> & { mailOutboxDir?: string }, logFn?: LogFn): Mailer {
+  if (config.mailOutboxDir) {
+    // Dev/test outbox (links in clear text): never in production, whatever the caller passes.
+    if (config.nodeEnv === 'production') throw new Error('MAIL_OUTBOX_DIR must not be set in production');
+    return fileOutboxMailer(config.mailOutboxDir, buildMailer({ ...config, mailOutboxDir: undefined }, logFn));
+  }
   if (config.smtpUrl) return smtpMailer(config.smtpUrl, config.mailFrom ?? DEFAULT_MAIL_FROM);
   // No SMTP configured. Development: the link is written to the log (never in production: it is a credential).
   if (config.nodeEnv !== 'production') return consoleMailer(logFn);
