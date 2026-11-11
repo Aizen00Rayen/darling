@@ -21,6 +21,8 @@ export interface Config {
   trustedProxyHops: number;
   smtpUrl: string | undefined;
   mailFrom: string | undefined;
+  /** One-time setup token (>= 32 characters). Unset = the first-run setup page is disabled. */
+  setupToken: string | undefined;
 }
 
 export interface ConfigIssue {
@@ -42,6 +44,8 @@ export class ConfigError extends Error {
 
 type Env = Record<string, string | undefined>;
 
+export const SETUP_TOKEN_MIN = 32;
+export const SETUP_TOKEN_MAX = 200;
 const DEFAULT_ORIGIN = 'http://localhost:3000';
 const DEV_DATA_DIR = '.data';
 // Deterministic, public, throwaway key used only when NODE_ENV=test and no key is given.
@@ -70,6 +74,7 @@ const schema = z.object({
   TRUSTED_PROXY_HOPS: z.string().optional(),
   SMTP_URL: z.string().optional(),
   MAIL_FROM: z.string().optional(),
+  SETUP_TOKEN: z.string().optional(),
 });
 
 function parseOrigin(value: string): string | null {
@@ -202,6 +207,15 @@ export function loadConfig(env: Env, options: { cwd?: string } = {}): Config {
   }
   const mailFrom = empty(raw.MAIL_FROM) ? undefined : raw.MAIL_FROM!.trim();
 
+  // SETUP_TOKEN: enables the one-time first-owner page while the users table is empty. A short token is a
+  // misconfiguration worth stopping on (it would be guessable), not something to silently ignore.
+  let setupToken: string | undefined;
+  if (!empty(raw.SETUP_TOKEN)) {
+    const v = raw.SETUP_TOKEN!.trim();
+    if (v.length >= SETUP_TOKEN_MIN && v.length <= SETUP_TOKEN_MAX && /^[\x21-\x7e]+$/.test(v)) setupToken = v;
+    else bad('SETUP_TOKEN', `must be ${SETUP_TOKEN_MIN} to ${SETUP_TOKEN_MAX} printable characters without spaces (generate one with: openssl rand -hex 32)`);
+  }
+
   if (issues.length > 0) throw new ConfigError(issues);
-  return { nodeEnv, isProduction, appOrigin, cookieSecure, dataDir, allowDataInAppDir, encryptionKey, trustedProxyHops, smtpUrl, mailFrom };
+  return { nodeEnv, isProduction, appOrigin, cookieSecure, dataDir, allowDataInAppDir, encryptionKey, trustedProxyHops, smtpUrl, mailFrom, setupToken };
 }

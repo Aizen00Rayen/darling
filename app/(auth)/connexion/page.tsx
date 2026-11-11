@@ -21,6 +21,6 @@ async function Content({ searchParams }: { searchParams: PageProps<'/connexion'>
   if (me) redirect(homePathFor(me.role));
 
   const next = typeof sp.next === 'string' ? sp.next : null;
-  const notice = sp.reset === '1' ? 'reset' : sp.invited === '1' ? 'invited' : null;
+  const notice = sp.reset === '1' ? 'reset' : sp.invited === '1' ? 'invited' : sp.setup === '1' ? 'setup' : null;
   return <LoginForm next={next} notice={notice} />;
 }

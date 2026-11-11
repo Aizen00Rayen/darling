@@ -11,7 +11,7 @@ import { useHydrated } from '@/lib/auth/use-hydrated';
 import { safeNextPath } from '@/lib/auth/next-path';
 import { MESSAGES, messageForCode } from '@/lib/auth/messages';
 
-type Props = { next: string | null; notice: 'reset' | 'invited' | null };
+type Props = { next: string | null; notice: 'reset' | 'invited' | 'setup' | null };
 
 export function LoginForm({ next, notice }: Props) {
   const router = useRouter();
@@ -105,6 +105,7 @@ export function LoginForm({ next, notice }: Props) {
     <>
       <h1 className="auth-title">Connexion</h1>
       {notice === 'reset' ? <Notice tone="success">{MESSAGES.resetDone}</Notice> : null}
+      {notice === 'setup' ? <Notice tone="success">{MESSAGES.setupDone}</Notice> : null}
       {notice === 'invited' ? <Notice tone="success">{MESSAGES.inviteDone}</Notice> : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
       <form className="auth-form" method="post" onSubmit={onSubmit} noValidate>

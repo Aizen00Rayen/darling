@@ -5,9 +5,8 @@ admin / manager / influenceuse portals, orders and commissions. One Next.js 16 a
 Launch design: [`docs/superpowers/specs/2026-11-11-lean-launch-design.md`](docs/superpowers/specs/2026-11-11-lean-launch-design.md),
 milestones: [`docs/superpowers/plans/2026-11-11-lean-launch.md`](docs/superpowers/plans/2026-11-11-lean-launch.md).
 
-Status: storefront and portal screens are in place; the server (SQLite adapter, migrations, config, logger,
-client IP) is the foundation for the API routes that arrive in the next milestones, so the portal API calls
-return 404 for now.
+Status: storefront, accounts (login, 2FA, invites, resets), user management, the audit and login journals and the
+settings screen work end to end. Orders and commissions arrive in the next milestones.
 
 ## Run it
 
@@ -28,6 +27,17 @@ npm run dev                 # http://localhost:3000
 
 Dev mail: with `SMTP_URL` empty the invite/reset links are written to the server log (non-production only); or `docker compose -p darling -f infra/docker-compose.yml up -d` starts Mailpit (SMTP 1025, inbox http://localhost:8025).
 
+## First owner
+
+Pick one (both end with an owner who logs in and is sent to enrol 2FA; neither prints or logs a password):
+
+- **Terminal:** `npm run create-owner -- --email you@example.com --name "Your Name"` creates an INVITED owner and prints
+  the invitation link (also mailed when SMTP works). It refuses when an owner exists (`--force` overrides) or the email is taken.
+- **No terminal (Hostinger):** set `SETUP_TOKEN` (32+ characters: `openssl rand -hex 32`) in the environment, open
+  `/configuration`, enter the token, your name, email and a password. The page and `POST /api/setup` exist ONLY while the
+  `users` table is empty and `SETUP_TOKEN` is set (anything else: 404 / redirect to `/connexion`); 5 attempts per 15 minutes per
+  address. Remove `SETUP_TOKEN` afterwards: once a user exists it does nothing, but a secret you do not need should not stay.
+
 ## Layout
 
 | Path | What |
@@ -35,7 +45,8 @@ Dev mail: with `SMTP_URL` empty the invite/reset links are written to the server
 | `app/`, `components/`, `lib/`, `data/`, `public/` | Storefront, auth pages and portals (`/admin`, `/manager`, `/affiliate`, `/compte`) |
 | `shared/` | Roles, permissions, DTO schemas, password and phone rules (imported as `@/shared`) |
 | `ui/` | Portal UI kit and styles (`@/ui`) |
-| `server/` | Server-only code: `db/` (SQLite adapter, migrations runner), `config.ts`, `log.ts`, `clock.ts`, `ids.ts`, `net/client-ip.ts`, `test/db.ts` |
+| `server/` | Server-only code: `db/` (SQLite adapter, migrations runner), `auth/`, `security/` (access rules, rate limits), `admin/` (users, journals, settings, first owner), `mail/`, `config.ts`, `log.ts`, `clock.ts`, `ids.ts`, `net/client-ip.ts` |
+| `scripts/` | Command-line tools (`create-owner.ts`, run with `tsx`) |
 | `migrations/` | Plain SQL migrations (`NNNN_name.sql`), applied on first database use |
 | `deploy-check/` | Tiny separate app to verify SQLite persistence on Hostinger |
 | `infra/` | `docker-compose.yml` (Mailpit only) |

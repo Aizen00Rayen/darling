@@ -29,6 +29,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     trustedProxyHops: 1,
     smtpUrl: undefined,
     mailFrom: undefined,
+    setupToken: undefined,
     ...overrides,
   };
 }

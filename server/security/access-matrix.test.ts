@@ -57,6 +57,8 @@ const MATRIX: Row[] = [
   { route: '/api/auth/2fa/enable', method: 'POST', body: {}, verdicts: AUTHENTICATED_ENROLLMENT_OK, allowed: [400] },
   { route: '/api/auth/2fa/disable', method: 'POST', body: {}, verdicts: AUTHENTICATED_ENROLLMENT_OK, allowed: [400] },
   { route: '/api/auth/password/change', method: 'POST', body: {}, verdicts: AUTHENTICATED_ENROLLMENT_OK, allowed: [400] },
+  // The first-run setup: public, but answers 404 as soon as any user exists (the matrix has several).
+  { route: '/api/setup', method: 'POST', body: {}, verdicts: ALL_OK, allowed: [404] },
   // users.manage
   { route: '/api/users', method: 'GET', ...USERS, allowed: [200] },
   { route: '/api/users', method: 'POST', body: {}, ...USERS, allowed: [400] },

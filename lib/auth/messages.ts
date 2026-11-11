@@ -10,6 +10,9 @@ export const MESSAGES = {
   invalidLink: 'Ce lien n’est plus valide.',
   resetDone: 'Mot de passe mis à jour. Vous pouvez vous connecter.',
   inviteDone: 'Compte activé. Vous pouvez vous connecter.',
+  setupDone: 'Compte propriétaire créé. Connectez-vous : vous serez invité à activer la double authentification.',
+  setupDisabled: 'La configuration initiale est terminée ou désactivée.',
+  invalidSetupToken: 'Jeton de configuration incorrect.',
   totpHint: 'Saisissez le code à 6 chiffres de votre application d’authentification.',
 } as const;
 
@@ -21,6 +24,10 @@ export function messageForCode(code: string): string {
       return MESSAGES.too_many_attempts;
     case 'totp_invalid':
       return MESSAGES.totp_invalid;
+    case 'invalid_setup_token':
+      return MESSAGES.invalidSetupToken;
+    case 'not_found':
+      return MESSAGES.setupDisabled;
     case 'network':
       return MESSAGES.network;
     default:

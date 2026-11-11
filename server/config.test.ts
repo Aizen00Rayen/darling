@@ -48,6 +48,7 @@ describe('loadConfig (development)', () => {
       trustedProxyHops: 1,
       smtpUrl: undefined,
       mailFrom: undefined,
+      setupToken: undefined,
     });
     expect(c.encryptionKey.equals(Buffer.alloc(32, 7))).toBe(true);
   });
@@ -128,6 +129,27 @@ describe('loadConfig validation', () => {
     for (const bad of ['1.5', 'one', '', '-1', '1e2']) {
       expect(errorOf({ ENCRYPTION_KEY: KEY, TRUSTED_PROXY_HOPS: bad }).keys).toEqual(['TRUSTED_PROXY_HOPS']);
     }
+  });
+});
+
+describe('SETUP_TOKEN', () => {
+  const token = 'a'.repeat(32);
+  it('is optional and trimmed; unset or blank means the setup page is disabled', () => {
+    expect(loadConfig({ ENCRYPTION_KEY: KEY }).setupToken).toBeUndefined();
+    expect(loadConfig({ ENCRYPTION_KEY: KEY, SETUP_TOKEN: '   ' }).setupToken).toBeUndefined();
+    expect(loadConfig({ ENCRYPTION_KEY: KEY, SETUP_TOKEN: ` ${token} ` }).setupToken).toBe(token);
+  });
+
+  it('refuses a token shorter than 32 characters, one with spaces, and an over-long one, without echoing it', () => {
+    for (const bad of ['short', 'a'.repeat(31), `${'a'.repeat(16)} ${'b'.repeat(16)}`, 'a'.repeat(201), `${'a'.repeat(31)}é`]) {
+      const err = errorOf({ ENCRYPTION_KEY: KEY, SETUP_TOKEN: bad });
+      expect(err.keys).toEqual(['SETUP_TOKEN']);
+      expect(err.message).not.toContain(bad);
+    }
+  });
+
+  it('is accepted in production too', () => {
+    expect(loadConfig(prod({ SETUP_TOKEN: token })).setupToken).toBe(token);
   });
 });
 

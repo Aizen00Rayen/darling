@@ -18,6 +18,7 @@ import * as auditLog from '@/app/api/audit-log/route';
 import * as loginEvents from '@/app/api/login-events/route';
 import * as settings from '@/app/api/settings/route';
 import * as settingByKey from '@/app/api/settings/[key]/route';
+import * as setup from '@/app/api/setup/route';
 import * as users from '@/app/api/users/route';
 import * as userById from '@/app/api/users/[id]/route';
 import * as userSuspend from '@/app/api/users/[id]/suspend/route';
@@ -58,6 +59,7 @@ export const ROUTES: readonly RegisteredRoute[] = [
   route('/api/login-events', loginEvents),
   route('/api/settings', settings),
   route('/api/settings/:key', settingByKey),
+  route('/api/setup', setup),
   route('/api/users', users),
   route('/api/users/:id', userById),
   route('/api/users/:id/suspend', userSuspend),

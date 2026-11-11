@@ -110,6 +110,15 @@ export type TwoFactorEnableInput = z.infer<typeof twoFactorEnableInput>;
 export const twoFactorDisableInput = z.object({ password: passwordField, code: sixDigitCode });
 export type TwoFactorDisableInput = z.infer<typeof twoFactorDisableInput>;
 
+/** First-run setup form: the setup token from the server environment plus the first owner's details. */
+export const setupInput = z.object({
+  token: z.string({ error: 'Jeton de configuration requis.' }).min(1, 'Jeton de configuration requis.').max(500, 'Jeton invalide.'),
+  fullName: fullNameSchema,
+  email: emailSchema,
+  password: passwordField,
+});
+export type SetupInput = z.infer<typeof setupInput>;
+
 export const apiErrorSchema = z.object({
   code: z.string(),
   message: z.string().optional(),
