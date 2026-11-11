@@ -6,6 +6,8 @@ import type { OrderActor } from '../orders/types';
 import { seedUser, type TestApp } from './app';
 import { orderInput } from './orders';
 
+let affiliatePhoneSeq = 0;
+
 export interface SeededAffiliate {
   id: string;
   code: string;
@@ -20,8 +22,9 @@ export async function seedAffiliate(
   opts: { fullName?: string; phone?: string | null; status?: 'active' | 'invited' | 'suspended' | 'deactivated'; managerId?: string | null; role?: 'affiliate' | 'sub_manager' } = {},
 ): Promise<SeededAffiliate> {
   const user = await seedUser(app, { role: opts.role ?? 'affiliate', fullName: opts.fullName ?? 'Aya Benali', status: opts.status ?? 'active' });
-  const phone = opts.phone === undefined ? null : opts.phone;
-  if (phone !== null) app.db.run('UPDATE users SET phone = ? WHERE id = ?', phone, user.id);
+  // A phone on file is required for influenceuses (it is how self-referral is detected): default to a distinct one.
+  const phone = opts.phone === undefined ? `05${String(50_000_000 + (affiliatePhoneSeq += 1)).slice(-8)}` : opts.phone;
+  app.db.run('UPDATE users SET phone = ? WHERE id = ?', phone, user.id);
   const code = app.db.transaction((tx) => {
     const c = nextAffiliateCode(tx, opts.fullName ?? 'Aya Benali');
     tx.run('INSERT INTO affiliate_profiles (user_id, code, manager_user_id, created_at) VALUES (?, ?, ?, ?)', user.id, c, opts.managerId ?? null, app.clock.now());
@@ -39,8 +42,8 @@ export function refCookieOf(res: Response): string | undefined {
 }
 export const setCookieOf = (res: Response): string | undefined => res.headers.getSetCookie().find((c) => c.startsWith('dl_ref='));
 
-export const click = (app: TestApp, code: string, init: { ip?: string; headers?: Record<string, string | null>; landingPath?: string } = {}) =>
-  app.call('/api/affiliate/click', { ip: init.ip, headers: init.headers, body: { code, landingPath: init.landingPath ?? '/' } });
+export const click = (app: TestApp, code: string, init: { ip?: string; headers?: Record<string, string | null>; landingPath?: string; referrer?: string } = {}) =>
+  app.call('/api/affiliate/click', { ip: init.ip, headers: init.headers, body: { code, landingPath: init.landingPath ?? '/', ...(init.referrer === undefined ? {} : { referrer: init.referrer }) } });
 
 let phoneSeq = 0;
 /** A distinct valid phone per call (the intake budget is 3 an hour per phone). */

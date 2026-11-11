@@ -15,8 +15,17 @@ describe('maskCustomerName', () => {
     ['Nour El Houda Benali', 'Nour B.'],
     ['Fatima Zohra Belkacemi', 'Fatima B.'],
     ["Sarah O'Brien", "Sarah O."],
-    ['', ''],
-    ['   ', ''],
+    ['', 'Client'],
+    ['   ', 'Client'],
+    ['Amel.Benali', 'Amel B.'],
+    ['Benali,Amel', 'Benali A.'],
+    ['Amel_Benali', 'Amel B.'],
+    ['Amel/Benali', 'Amel B.'],
+    ['Amel...Benali.', 'Amel B.'],
+    ['Amel 😀 Benali', 'Amel B.'],
+    ['😀', 'Client'],
+    ['...', 'Client'],
+    ['Zoë-Anne,Ñuñez', 'Zoë-Anne Ñ.'],
     [' Amel Benali', 'Amel B.'],
   ])('%j -> %j', (input, expected) => {
     expect(maskCustomerName(input)).toBe(expected);
@@ -24,7 +33,7 @@ describe('maskCustomerName', () => {
 
   it('never lets a phone number, an e-mail or other digits typed into the name field through', () => {
     expect(maskCustomerName('0612345678 Amel')).toBe('Amel');
-    expect(maskCustomerName('0612345678')).toBe('');
+    expect(maskCustomerName('0612345678')).toBe('Client');
     expect(maskCustomerName('Amel 0612345678')).toBe('Amel');
     expect(maskCustomerName('amel@example.com Benali')).toBe('Benali');
     expect(maskCustomerName('Amel B2')).toBe('Amel');

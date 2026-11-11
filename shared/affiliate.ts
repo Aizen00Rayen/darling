@@ -33,19 +33,22 @@ const MAX_FIRST_NAME = 30;
  * What an influenceuse or a sous-manager may see of a customer: the first name and the initial of the LAST word
  * ("Amel B.", "Nour B." for "Nour El Houda Benali"), nothing else. Words that contain a digit or an `@` are skipped (customers sometimes type their phone
  * number or e-mail into the name field), characters other than letters, marks, hyphens and apostrophes are dropped,
- * the first name is capped. A single name stays as is; an empty or unusable name gives ''.
+ * the first name is capped. A single name stays as is; an empty or unusable name gives 'Client'.
  */
 export function maskCustomerName(fullName: string): string {
   const words = fullName
-    .split(/[\s ]+/u)
+    .split(/[\s\u00a0]+/u)
     .filter((w) => w !== '' && !/[\d@]/u.test(w))
-    .map((w) => w.replace(/[^\p{L}\p{M}'’-]/gu, ''))
+    .join(' ')
+    // Any other separator (dot, comma, underscore, slash, emoji...) also ends a word: "Amel.Benali" is two words.
+    .split(/[^\p{L}\p{M}'’-]+/u)
+    .map((w) => w.replace(/^[^\p{L}]+/u, ''))
     .filter((w) => /\p{L}/u.test(w));
   const first = words[0];
-  if (first === undefined) return '';
+  if (first === undefined) return 'Client';
   const name = Array.from(first).slice(0, MAX_FIRST_NAME).join('');
   const last = words.length > 1 ? words[words.length - 1] : undefined;
-  const initial = last === undefined ? undefined : Array.from(last.replace(/^[^\p{L}]+/u, ''))[0];
+  const initial = last === undefined ? undefined : Array.from(last)[0];
   return initial === undefined ? name : `${name} ${initial.toLocaleUpperCase('fr')}.`;
 }
 
@@ -57,6 +60,12 @@ export const PAYOUT_METHODS = ['cash', 'ccp', 'baridimob', 'bank', 'other'] as c
 export type PayoutMethod = (typeof PAYOUT_METHODS)[number];
 
 export const HOLD_REASON_SELF_REFERRAL = 'auto-référence';
+/** The influenceuse has no phone on file, so self-referral cannot be ruled out. */
+export const HOLD_REASON_NO_PHONE = 'téléphone manquant';
+
+/** Roles that must have a phone number (it is how self-referral is detected). */
+export const PHONE_REQUIRED_ROLES = ['affiliate', 'sub_manager'] as const;
+export const PHONE_REQUIRED_MESSAGE = 'Téléphone obligatoire pour ce rôle.';
 
 export const isCommissionStatus = (v: unknown): v is CommissionStatus => typeof v === 'string' && (COMMISSION_STATUSES as readonly string[]).includes(v);
 
@@ -75,7 +84,8 @@ export interface CommissionTotals extends OwnTotals {
 
 /** An order as an influenceuse or sous-manager sees it: the customer is a masked name, nothing else personal. */
 export interface MaskedOrder {
-  number: string;
+  /** A per-person display label (`#1`, `#2`...), never the shop's global order number. */
+  ref: string;
   createdAt: string;
   status: string;
   productName: string;
@@ -89,7 +99,7 @@ export interface MaskedOrder {
 
 export interface OwnCommission {
   id: string;
-  orderNumber: string;
+  orderRef: string;
   orderDate: string;
   kind: CommissionKind;
   amount: number;
@@ -108,7 +118,7 @@ export interface OwnAdjustment {
   id: string;
   amount: number;
   reason: string;
-  orderNumber: string | null;
+  orderRef: string | null;
   createdAt: string;
   /** True once a payout has netted it. */
   settled: boolean;

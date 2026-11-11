@@ -211,9 +211,29 @@ describe('self-referral', () => {
     expect(row.self_referral).toBe(1);
   });
 
-  it('does not flag an influenceuse without a phone', async () => {
+  it('holds the commissions with "téléphone manquant" when the influenceuse has no phone on file (the guard cannot work), without flagging self-referral', async () => {
+    const boss = await seedManager(app);
+    const aya = await seedAffiliate(app, { phone: null, managerId: boss.id });
+    const row = orderRow(await numberOf(await placeOrder(app, await cookieFor(app, aya.code))));
+    expect(row.self_referral).toBe(0);
+    expect(commissionsOf(app, row.id).map((c) => [c.kind, c.status, c.on_hold, c.hold_reason])).toEqual([
+      ['affiliate', 'pending', 1, 'téléphone manquant'],
+      ['manager', 'pending', 1, 'téléphone manquant'],
+    ]);
+  });
+
+  it('a blank phone counts as missing; a normal phone and a different customer is not held', async () => {
+    const blank = await seedAffiliate(app, { fullName: 'Blank Phone', phone: '   ' });
+    expect(commissionsOf(app, orderRow(await numberOf(await placeOrder(app, await cookieFor(app, blank.code)))).id)[0]).toMatchObject({ on_hold: 1, hold_reason: 'téléphone manquant' });
+    const ok = await seedAffiliate(app, { fullName: 'Ok Phone', phone: '0550123456' });
+    expect(commissionsOf(app, orderRow(await numberOf(await placeOrder(app, await cookieFor(app, ok.code)))).id)[0]).toMatchObject({ on_hold: 0, hold_reason: null });
+  });
+
+  it('applies to staff-entered attribution too, and the hold can be released by an admin afterwards', async () => {
     const aya = await seedAffiliate(app, { phone: null });
-    expect(orderRow(await numberOf(await placeOrder(app, await cookieFor(app, aya.code)))).self_referral).toBe(0);
+    const actor = await seedStaff(app);
+    const order = makeOrder(app, { affiliateCode: aya.code, createdBy: actor.userId, source: 'instagram' });
+    expect(commissionsOf(app, order.id)[0]).toMatchObject({ on_hold: 1, hold_reason: 'téléphone manquant' });
   });
 });
 

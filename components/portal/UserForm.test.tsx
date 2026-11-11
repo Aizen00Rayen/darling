@@ -116,13 +116,13 @@ describe('UserForm (edit): what is sent', () => {
   });
 
   it('an affiliate target: name, phone and role only', async () => {
-    const aff = user({ role: 'affiliate' });
+    const aff = user({ role: 'affiliate', phone: '0550123456' });
     const [, init] = await submitEdit(aff, { meIsOwner: true, meId: 'owner-id' });
-    expect(init.body).toEqual({ fullName: 'Renamed Person', role: 'affiliate' });
+    expect(init.body).toEqual({ fullName: 'Renamed Person', phone: '0550123456', role: 'affiliate' });
   });
 
-  it('clearing the phone field sends null; an untouched empty phone sends nothing', async () => {
-    const withPhone = user({ role: 'affiliate', phone: '0550123456' });
+  it('clearing the phone field of a super manager sends null; an untouched empty phone sends nothing', async () => {
+    const withPhone = user({ role: 'super_manager', phone: '0550123456' });
     const u = userEvent.setup();
     render(<UserForm mode="edit" meIsOwner meId="o" user={withPhone} />);
     await u.clear(screen.getByLabelText(/Téléphone/));
@@ -131,14 +131,23 @@ describe('UserForm (edit): what is sent', () => {
     expect((api.mock.calls[0] as [string, { body: Record<string, unknown> }])[1].body.phone).toBeNull();
     cleanup();
     api.mockClear();
-    const [, init] = await submitEdit(user({ role: 'affiliate' }), { meIsOwner: true, meId: 'o' });
+    const [, init] = await submitEdit(user({ role: 'super_manager' }), { meIsOwner: true, meId: 'o' });
     expect('phone' in init.body).toBe(false);
   });
 
+  it('clearing the phone field of an influenceuse is refused in the form (no request)', async () => {
+    const u = userEvent.setup();
+    render(<UserForm mode="edit" meIsOwner meId="o" user={user({ role: 'affiliate', phone: '0550123456' })} />);
+    await u.clear(screen.getByLabelText('Téléphone'));
+    await u.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    expect(await screen.findByText('Téléphone obligatoire pour ce rôle.')).toBeTruthy();
+    expect(api).not.toHaveBeenCalled();
+  });
+
   it('a sub manager target: name, phone and role, no permission fields', async () => {
-    const sub = user({ role: 'sub_manager' });
+    const sub = user({ role: 'sub_manager', phone: '0550123456' });
     const [, init] = await submitEdit(sub, { meIsOwner: false, meId: 'manager-id' });
-    expect(init.body).toEqual({ fullName: 'Renamed Person', role: 'sub_manager' });
+    expect(init.body).toEqual({ fullName: 'Renamed Person', phone: '0550123456', role: 'sub_manager' });
   });
 
   it('shows French explanations instead of the permission list for an owner', () => {
@@ -195,25 +204,27 @@ describe('UserForm: influenceuse and her sous-manager', () => {
     await u.type(screen.getByLabelText('Nom complet'), 'Aya Benali');
     await u.type(screen.getByLabelText('Adresse e-mail'), 'aya@example.test');
     await u.selectOptions(screen.getByLabelText('Rôle'), 'affiliate');
+    await u.type(screen.getByLabelText('Téléphone'), '0550123456');
     await u.selectOptions(screen.getByLabelText('Sous-manager'), managers[1]!.id);
     await u.click(screen.getByRole('button', { name: 'Envoyer l’invitation' }));
     await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
-    expect(api.mock.calls[0]![1].body).toEqual({ fullName: 'Aya Benali', email: 'aya@example.test', role: 'affiliate', managerUserId: managers[1]!.id });
+    expect(api.mock.calls[0]![1].body).toEqual({ fullName: 'Aya Benali', email: 'aya@example.test', phone: '0550123456', role: 'affiliate', managerUserId: managers[1]!.id });
     cleanup();
     api.mockClear();
     render(<UserForm mode="create" meIsOwner managers={managers} />);
     await u.type(screen.getByLabelText('Nom complet'), 'Aya Benali');
     await u.type(screen.getByLabelText('Adresse e-mail'), 'aya@example.test');
     await u.selectOptions(screen.getByLabelText('Rôle'), 'affiliate');
+    await u.type(screen.getByLabelText('Téléphone'), '0550123456');
     await u.click(screen.getByRole('button', { name: 'Envoyer l’invitation' }));
     await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
     expect('managerUserId' in api.mock.calls[0]![1].body).toBe(false);
   });
 
   it('edit: sends the manager only when it changed (null to clear), and the current one is preselected', async () => {
-    const aya = user({ role: 'affiliate', affiliate: { code: 'AYA001', managerUserId: managers[0]!.id, managerName: 'Karim Chef' } });
+    const aya = user({ role: 'affiliate', phone: '0550123456', affiliate: { code: 'AYA001', managerUserId: managers[0]!.id, managerName: 'Karim Chef' } });
     const [, unchanged] = await submitEdit(aya, { meIsOwner: true, meId: 'x' });
-    expect(unchanged.body).toEqual({ fullName: 'Renamed Person', role: 'affiliate' });
+    expect(unchanged.body).toEqual({ fullName: 'Renamed Person', phone: '0550123456', role: 'affiliate' });
     cleanup();
     api.mockClear();
     const u = userEvent.setup();
@@ -236,9 +247,32 @@ describe('UserForm: influenceuse and her sous-manager', () => {
   it('shows the server\'s manager error under the field', async () => {
     api.mockResolvedValue({ ok: false, status: 400, code: 'validation', errors: { managerUserId: 'Choisissez un sous-manager actif.' } });
     const u = userEvent.setup();
-    render(<UserForm mode="edit" meIsOwner meId="x" user={user({ role: 'affiliate' })} managers={managers} />);
+    render(<UserForm mode="edit" meIsOwner meId="x" user={user({ role: 'affiliate', phone: '0550123456' })} managers={managers} />);
     await u.selectOptions(screen.getByLabelText('Sous-manager'), managers[0]!.id);
     await u.click(screen.getByRole('button', { name: 'Enregistrer' }));
     expect(await screen.findByText('Choisissez un sous-manager actif.')).toBeTruthy();
+  });
+});
+
+
+describe('UserForm: phone is required for influenceuses and sous-managers', () => {
+  it.each([['affiliate', 'Influenceuse'], ['sub_manager', 'Sous-manager']])('%s: labelled as required and refused locally when empty (no request)', async (role) => {
+    const u = userEvent.setup();
+    render(<UserForm mode="create" meIsOwner />);
+    await u.selectOptions(screen.getByLabelText('Rôle'), role);
+    expect(screen.getByLabelText('Téléphone')).toBeTruthy();
+    expect(screen.queryByLabelText('Téléphone (facultatif)')).toBeNull();
+    await u.type(screen.getByLabelText('Nom complet'), 'Aya Benali');
+    await u.type(screen.getByLabelText('Adresse e-mail'), 'aya@example.test');
+    await u.click(screen.getByRole('button', { name: 'Envoyer l’invitation' }));
+    expect(await screen.findByText('Téléphone obligatoire pour ce rôle.')).toBeTruthy();
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it('a super manager keeps the phone optional', async () => {
+    const u = userEvent.setup();
+    render(<UserForm mode="create" meIsOwner />);
+    await u.selectOptions(screen.getByLabelText('Rôle'), 'super_manager');
+    expect(screen.getByLabelText('Téléphone (facultatif)')).toBeTruthy();
   });
 });

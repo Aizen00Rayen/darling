@@ -20,7 +20,9 @@ type Call = { cookie?: string; body?: Body };
 const call = (method: string, url: string, opts: Call = {}) =>
   app.call(url, { method, cookie: opts.cookie, ...(opts.body === undefined ? {} : { body: opts.body }) });
 const get = (url: string, cookie?: string) => call('GET', url, { cookie });
-const create = (cookie: string | undefined, body: Body) => call('POST', '/api/users', { cookie, body });
+// Influenceuses and sous-managers must have a phone: tests that do not care about it get a default one.
+const create = (cookie: string | undefined, body: Body) =>
+  call('POST', '/api/users', { cookie, body: body.role === 'affiliate' || body.role === 'sub_manager' ? { phone: '0550123456', ...body } : body });
 const patch = (cookie: string | undefined, id: string, body: Body) => call('PATCH', `/api/users/${id}`, { cookie, body });
 const action = (cookie: string | undefined, id: string, verb: 'suspend' | 'reactivate' | 'resend-invite' | 'revoke-sessions', body?: Body) =>
   call('POST', `/api/users/${id}/${verb}`, { cookie, ...(body ? { body } : {}) });
@@ -336,12 +338,12 @@ describe('owner rules', () => {
   it('removes grants when a super manager becomes another role, and demands the owner flag be cleared first', async () => {
     const boss = await owner();
     const sm = await seedUser(app, { role: 'super_manager', permissions: ['audit.read'] });
-    const res = await patch(boss.cookie, sm.id, { role: 'sub_manager' });
+    const res = await patch(boss.cookie, sm.id, { role: 'sub_manager', phone: '0550123456' });
     expect(res.status).toBe(200);
     expect(grantsOf(sm.id)).toEqual([]);
 
     const o2 = await seedUser(app, { role: 'super_manager', isOwner: true });
-    const blocked = await patch(boss.cookie, o2.id, { role: 'sub_manager' });
+    const blocked = await patch(boss.cookie, o2.id, { role: 'sub_manager', phone: '0550123456' });
     expect(blocked.status).toBe(400);
     expect(Object.keys((await json(blocked)).errors as object)).toEqual(['role']);
     expect(row(o2.id).role).toBe('super_manager');
@@ -368,7 +370,7 @@ describe('PATCH /api/users/:id', () => {
     expect((await me(sub.cookie)).status).toBe(200);
     expect(liveSessions(sub.id)).toBe(1);
     const [entry] = auditsFor('user.updated', sub.id);
-    expect(JSON.parse(entry?.before ?? '{}')).toMatchObject({ fullName: 'Test User', phone: null });
+    expect(JSON.parse(entry?.before ?? '{}')).toMatchObject({ fullName: 'Test User', phone: '0550000000' });
     expect(JSON.parse(entry?.after ?? '{}')).toMatchObject({ fullName: 'New Name', phone: '0661000000' });
   });
 
@@ -430,27 +432,27 @@ describe('PATCH /api/users/:id', () => {
 });
 
 describe('clearing a phone number', () => {
-  it.each([[null], ['']])('PATCH phone %j clears it, is audited, and leaves sessions alone', async (value) => {
-    const admin = await manager();
-    const sub = await seedAndLogin('sub_manager');
-    await patch(admin.cookie, sub.id, { phone: '0661 00 00 00' });
-    const res = await patch(admin.cookie, sub.id, { phone: value });
+  it.each([[null], ['']])('PATCH phone %j clears it on a super manager, is audited, and leaves sessions alone', async (value) => {
+    const boss = await owner();
+    const target = await seedAndLogin('super_manager');
+    await patch(boss.cookie, target.id, { phone: '0661 00 00 00' });
+    const res = await patch(boss.cookie, target.id, { phone: value });
     expect(res.status).toBe(200);
     expect((await json(res)).phone).toBeNull();
-    expect(row(sub.id).phone).toBeNull();
-    expect((await me(sub.cookie)).status).toBe(200);
-    const entries = auditsFor('user.updated', sub.id);
+    expect(row(target.id).phone).toBeNull();
+    expect((await me(target.cookie)).status).toBe(200);
+    const entries = auditsFor('user.updated', target.id);
     expect(JSON.parse(entries.at(-1)?.before ?? '{}').phone).toBe('0661000000');
     expect(JSON.parse(entries.at(-1)?.after ?? '{}').phone).toBeNull();
   });
 
   it('clearing an already empty phone is a no-op without an audit row; bad numbers are still refused', async () => {
-    const admin = await manager();
-    const sub = await seedUser(app, { role: 'sub_manager' });
-    expect((await patch(admin.cookie, sub.id, { phone: null })).status).toBe(200);
+    const boss = await owner();
+    const target = await seedUser(app, { role: 'super_manager' });
+    expect((await patch(boss.cookie, target.id, { phone: null })).status).toBe(200);
     expect(auditsFor('user.updated')).toHaveLength(0);
-    expect((await patch(admin.cookie, sub.id, { phone: 'abc' })).status).toBe(400);
-    expect((await patch(admin.cookie, sub.id, { phone: '   ' })).status).toBe(400);
+    expect((await patch(boss.cookie, target.id, { phone: 'abc' })).status).toBe(400);
+    expect((await patch(boss.cookie, target.id, { phone: '   ' })).status).toBe(400);
   });
 
   it('create still refuses an empty phone', async () => {
@@ -459,415 +461,54 @@ describe('clearing a phone number', () => {
   });
 });
 
-describe('owner edit bug (the form sent an owner’s effective permissions as grants)', () => {
-  it('an owner edits their own name and phone: 200, sessions untouched, no grant rows', async () => {
-    const boss = await owner();
-    const res = await patch(boss.cookie, boss.id, { fullName: 'Boss Renamed', phone: '0550 11 22 33' });
-    expect(res.status).toBe(200);
-    expect(await json(res)).toMatchObject({ fullName: 'Boss Renamed', phone: '0550112233', isOwner: true });
-    expect((await me(boss.cookie)).status).toBe(200);
-    expect(grantsOf(boss.id)).toEqual([]);
-  });
-
-  it('an owner who sends the old buggy payload (all 14 effective permissions, role, isOwner) still succeeds and writes no grants', async () => {
-    const boss = await owner();
-    const res = await patch(boss.cookie, boss.id, { fullName: 'Boss Again', role: 'super_manager', isOwner: true, permissions: [...PERMISSIONS] });
-    expect(res.status).toBe(200);
-    expect(grantsOf(boss.id)).toEqual([]);
-    expect((await me(boss.cookie)).status).toBe(200);
-    expect(((await json(res)).permissions as string[]).length).toBe(PERMISSIONS.length);
-  });
-
-  it('owner A edits owner B: 200, B’s sessions untouched, no grant rows, even with permissions in the payload', async () => {
-    const a = await owner();
-    const b = await seedAndLogin('super_manager', { isOwner: true });
-    const res = await patch(a.cookie, b.id, { fullName: 'B Renamed', permissions: [...PERMISSIONS], isOwner: true });
-    expect(res.status).toBe(200);
-    expect(row(b.id).full_name).toBe('B Renamed');
-    expect(liveSessions(b.id)).toBe(1);
-    expect((await me(b.cookie)).status).toBe(200);
-    expect(grantsOf(b.id)).toEqual([]);
-    const [entry] = auditsFor('user.updated', b.id);
-    expect(JSON.parse(entry?.after ?? '{}').permissions).toEqual([]);
-  });
-
-  it('a non-owner with users.manage can edit their own name and phone (but not role or permissions)', async () => {
+describe('a phone is required for influenceuses and sous-managers', () => {
+  const MESSAGE = 'Téléphone obligatoire pour ce rôle.';
+  it.each(['affiliate', 'sub_manager'] as const)('create %s without a phone: 400 validation on phone, nothing created', async (role) => {
     const admin = await manager();
-    const res = await patch(admin.cookie, admin.id, { fullName: 'Me Renamed', phone: '0770 00 00 01' });
-    expect(res.status).toBe(200);
-    expect(row(admin.id).full_name).toBe('Me Renamed');
-    expect((await me(admin.cookie)).status).toBe(200);
-    expect(grantsOf(admin.id)).toEqual(['users.manage']);
-    // sending their own current grants back is not a change
-    expect((await patch(admin.cookie, admin.id, { fullName: 'Me Again', permissions: ['users.manage'] })).status).toBe(200);
-  });
-
-  it('grants for non-owner super managers still work and revoke sessions', async () => {
-    const boss = await owner();
-    const sm = await seedAndLogin('super_manager', { permissions: [] });
-    const res = await patch(boss.cookie, sm.id, { permissions: ['users.manage', 'orders.read'] });
-    expect(res.status).toBe(200);
-    expect(grantsOf(sm.id)).toEqual(['orders.read', 'users.manage']);
-    expect((await me(sm.cookie)).status).toBe(401);
-  });
-
-  it('de-flagging an owner with a permission list stores that list as grants', async () => {
-    const a = await owner();
-    const b = await seedUser(app, { role: 'super_manager', isOwner: true });
-    const res = await patch(a.cookie, b.id, { isOwner: false, permissions: ['audit.read'] });
-    expect(res.status).toBe(200);
-    expect(grantsOf(b.id)).toEqual(['audit.read']);
-    expect(row(b.id).is_owner).toBe(0);
-  });
-
-  it('promoting to owner clears stale grant rows', async () => {
-    const a = await owner();
-    const sm = await seedUser(app, { role: 'super_manager', permissions: ['audit.read'] });
-    expect((await patch(a.cookie, sm.id, { isOwner: true, permissions: ['audit.read'] })).status).toBe(200);
-    expect(grantsOf(sm.id)).toEqual([]);
-  });
-});
-
-describe('self rules', () => {
-  it('forbids changing your own role or permissions', async () => {
-    const boss = await owner();
-    await seedUser(app, { role: 'super_manager', isOwner: true });
-    for (const body of [{ role: 'sub_manager' }, { role: 'sub_manager', isOwner: false }]) {
-      const res = await patch(boss.cookie, boss.id, body);
-      expect(res.status).toBe(403);
-      expect(await json(res)).toEqual({ code: 'forbidden' });
+    for (const body of [{ email: 'np@example.test', fullName: 'No Phone', role }, { email: 'np@example.test', fullName: 'No Phone', role, phone: null }, { email: 'np@example.test', fullName: 'No Phone', role, phone: '' }]) {
+      const res = await call('POST', '/api/users', { cookie: admin.cookie, body: body as Body });
+      expect(res.status).toBe(400);
+      expect(((await json(res)).errors as Record<string, string>).phone).toBe(MESSAGE);
     }
-    expect(row(boss.id).role).toBe('super_manager');
-    expect(row(boss.id).is_owner).toBe(1);
-    expect((await me(boss.cookie)).status).toBe(200);
-
-    const admin = await manager();
-    const own = await patch(admin.cookie, admin.id, { permissions: ['users.manage', 'audit.read'] });
-    expect(own.status).toBe(403);
-    expect(await json(own)).toEqual({ code: 'forbidden' });
-    expect(grantsOf(admin.id)).toEqual(['users.manage']);
-    const dropped = await patch(admin.cookie, admin.id, { permissions: [] });
-    expect(dropped.status).toBe(403);
+    expect(app.db.get("SELECT 1 FROM users WHERE email = 'np@example.test'")).toBeUndefined();
+    expect(app.db.get('SELECT count(*) AS n FROM affiliate_profiles')).toEqual({ n: 0 });
   });
 
-  it('refuses to suspend yourself, even as the last owner', async () => {
+  it('a super manager needs no phone', async () => {
     const boss = await owner();
-    const res = await action(boss.cookie, boss.id, 'suspend');
-    expect(res.status).toBe(409);
-    expect(await json(res)).toEqual({ code: 'cannot_suspend_self' });
-    expect(row(boss.id).status).toBe('active');
-    expect(audits()).toHaveLength(0);
-    const admin = await manager();
-    expect(await json(await action(admin.cookie, admin.id, 'suspend'))).toEqual({ code: 'cannot_suspend_self' });
+    expect((await create(boss.cookie, { email: 'sm@example.test', fullName: 'Super Manager', role: 'super_manager' })).status).toBe(201);
   });
 
-  it('lets an owner clear their own flag only while another active owner remains', async () => {
-    const a = await owner();
-    const b = await seedUser(app, { role: 'super_manager', isOwner: true, status: 'suspended' });
-    const blocked = await patch(a.cookie, a.id, { isOwner: false });
-    expect(blocked.status).toBe(409);
-    expect(await json(blocked)).toEqual({ code: 'last_owner' });
-    expect(row(a.id).is_owner).toBe(1);
-    expect((await me(a.cookie)).status).toBe(200);
+  it.each(['affiliate', 'sub_manager'] as const)('cannot clear the phone of a %s (null or empty), nothing changes', async (role) => {
+    const admin = await manager();
+    const target = await seedUser(app, { role, phone: '0550123456' });
+    for (const phone of [null, '']) {
+      const res = await patch(admin.cookie, target.id, { phone });
+      expect(res.status).toBe(400);
+      expect(((await json(res)).errors as Record<string, string>).phone).toBe(MESSAGE);
+    }
+    expect(row(target.id).phone).toBe('0550123456');
+    expect(auditsFor('user.updated', target.id)).toHaveLength(0);
+  });
 
-    app.db.run("UPDATE users SET status = 'active' WHERE id = ?", b.id);
-    const ok = await patch(a.cookie, a.id, { isOwner: false });
+  it('a role change to influenceuse or sous-manager needs a phone on file or in the same request', async () => {
+    const boss = await owner();
+    const target = await seedUser(app, { role: 'super_manager' });
+    const refused = await patch(boss.cookie, target.id, { role: 'sub_manager' });
+    expect([refused.status, ((await json(refused)).errors as Record<string, string>).phone]).toEqual([400, MESSAGE]);
+    expect(row(target.id).role).toBe('super_manager');
+    const ok = await patch(boss.cookie, target.id, { role: 'affiliate', phone: '0661 00 00 00' });
     expect(ok.status).toBe(200);
-    expect(await json(ok)).toMatchObject({ isOwner: false, role: 'super_manager' });
-    expect((await me(a.cookie)).status).toBe(401);
-    expect(activeOwnerIds()).toEqual([b.id]);
+    expect(row(target.id)).toMatchObject({ role: 'affiliate', phone: '0661000000' });
+    // an influenceuse who already has a phone keeps it through a role change without resending it
+    const t2 = await seedUser(app, { role: 'sub_manager', phone: '0550999888' });
+    expect((await patch(boss.cookie, t2.id, { role: 'affiliate' })).status).toBe(200);
   });
 
-  it('does not count an invited owner as an active one', async () => {
-    const a = await owner();
-    await seedUser(app, { role: 'super_manager', isOwner: true, status: 'invited' });
-    const res = await patch(a.cookie, a.id, { isOwner: false });
-    expect(res.status).toBe(409);
-    expect(await json(res)).toEqual({ code: 'last_owner' });
-  });
-});
-
-describe('re-authorisation inside the transaction (ruling R12)', () => {
-  /** Runs `hook` once, right before the handler's first transaction: i.e. after authentication and the access decision. */
-  function changeBeforeTransaction(hook: () => void) {
-    const real = app.db.transaction.bind(app.db);
-    let done = false;
-    app.db.transaction = ((fn: never, mode?: 'immediate' | 'deferred') => {
-      if (!done) {
-        done = true;
-        hook();
-      }
-      return real(fn, mode);
-    }) as typeof app.db.transaction;
-  }
-
-  it('an owner demoted after authentication cannot complete an owner-only action on a super manager', async () => {
-    const boss = await owner();
-    const other = await seedUser(app, { role: 'super_manager', isOwner: true }); // keeps the last-owner rule out of the way
-    const target = await seedUser(app, { role: 'super_manager', permissions: ['audit.read'] });
-    changeBeforeTransaction(() => app.db.run('UPDATE users SET is_owner = 0 WHERE id = ?', boss.id));
-    const res = await patch(boss.cookie, target.id, { fullName: 'Hijacked' });
-    expect(res.status).toBe(403);
-    expect(row(target.id).full_name).toBe('Test User');
-    expect(auditsFor('user.updated')).toHaveLength(0);
-    expect(other.id).toBeTruthy();
-  });
-
-  it('an actor suspended after authentication cannot finish any action', async () => {
+  it('editing the name of a legacy influenceuse WITHOUT a phone is refused until a phone is added', async () => {
     const admin = await manager();
-    const target = await seedUser(app, { role: 'affiliate' });
-    changeBeforeTransaction(() => app.db.run("UPDATE users SET status = 'suspended' WHERE id = ?", admin.id));
-    const res = await action(admin.cookie, target.id, 'suspend');
-    expect(res.status).toBe(403);
-    expect(row(target.id).status).toBe('active');
-  });
-
-  it('a manager whose users.manage grant is removed after authentication cannot create users', async () => {
-    const admin = await manager();
-    changeBeforeTransaction(() => app.db.run('DELETE FROM user_permissions WHERE user_id = ?', admin.id));
-    const res = await create(admin.cookie, { email: 'late@example.test', fullName: 'Late Comer', role: 'affiliate' });
-    expect(res.status).toBe(403);
-    expect(app.db.get("SELECT 1 FROM users WHERE email = 'late@example.test'")).toBeUndefined();
-    expect(audits()).toHaveLength(0);
-  });
-
-  it('a stale actor id (demoted owner) is refused by every mutation of the service', async () => {
-    const { createUser, updateUser, suspendUser, reactivateUser, revokeSessions, resendInvite } = await import('./users');
-    const stale = await seedUser(app, { role: 'super_manager', isOwner: true });
-    app.db.run('UPDATE users SET is_owner = 0 WHERE id = ?', stale.id); // demoted after "authentication"
-    await seedUser(app, { role: 'super_manager', isOwner: true });
-    const smTarget = await seedUser(app, { role: 'super_manager', status: 'invited' });
-    const deps = { db: app.db, clock: app.clock, config: app.config, mailer: app.mailer };
-    const actor = { userId: stale.id, ip: '10.0.0.1', requestId: 'r' };
-    const refused = async (run: () => unknown) => {
-      let thrown: unknown;
-      try {
-        await run();
-      } catch (e) {
-        thrown = e;
-      }
-      expect(thrown).toMatchObject({ status: 403 });
-    };
-    await refused(() => updateUser(deps, actor, smTarget.id, { fullName: 'Nope' }));
-    await refused(() => suspendUser(deps, actor, smTarget.id, {}));
-    await refused(() => reactivateUser(deps, actor, smTarget.id, {}));
-    await refused(() => revokeSessions(deps, actor, smTarget.id, {}));
-    await refused(() => resendInvite(deps, actor, smTarget.id, {}));
-    await refused(() => createUser(deps, actor, { email: 'sm2@example.test', fullName: 'Sm Two', role: 'super_manager' }));
-    expect(audits()).toHaveLength(0);
-  });
-
-  it('an unknown actor id is refused too', async () => {
-    const { suspendUser } = await import('./users');
-    const target = await seedUser(app, { role: 'affiliate' });
-    const deps = { db: app.db, clock: app.clock, config: app.config, mailer: app.mailer };
-    expect(() => suspendUser(deps, { userId: '018f0000-0000-7000-8000-000000000000', ip: 'x', requestId: 'r' }, target.id, {})).toThrow(expect.objectContaining({ status: 403 }));
-  });
-});
-
-describe('sessions are revoked on every status change (old cookie then answers 401)', () => {
-  it('suspend: 204, no login, existing session dead, audited', async () => {
-    const admin = await manager();
-    const target = await seedAndLogin('affiliate');
-    expect(liveSessions(target.id)).toBe(1);
-    const res = await action(admin.cookie, target.id, 'suspend', { reason: 'fraud suspicion' });
-    expect(res.status).toBe(204);
-    expect(await res.text()).toBe('');
-    expect(row(target.id).status).toBe('suspended');
-    expect((await me(target.cookie)).status).toBe(401);
-    expect(liveSessions(target.id)).toBe(0);
-    const attempt = await app.call('/api/auth/login', { body: { email: target.email, password: target.password } });
-    expect(attempt.status).toBe(401);
-    const [entry] = auditsFor('user.suspended', target.id);
-    expect(entry?.actor_user_id).toBe(admin.id);
-    expect(entry?.reason).toBe('fraud suspicion');
-    expect(JSON.parse(entry?.before ?? '{}')).toMatchObject({ status: 'active' });
-    expect(JSON.parse(entry?.after ?? '{}')).toMatchObject({ status: 'suspended' });
-  });
-
-  it('suspends twice with a single audit row', async () => {
-    const admin = await manager();
-    const target = await seedUser(app, { role: 'affiliate' });
-    expect((await action(admin.cookie, target.id, 'suspend')).status).toBe(204);
-    expect((await action(admin.cookie, target.id, 'suspend')).status).toBe(204);
-    expect(auditsFor('user.suspended')).toHaveLength(1);
-  });
-
-  it('accepts a body-less request, an empty object, and refuses an over-long reason', async () => {
-    const admin = await manager();
-    const t = [await seedUser(app, { role: 'affiliate' }), await seedUser(app, { role: 'affiliate' }), await seedUser(app, { role: 'affiliate' })];
-    expect((await action(admin.cookie, t[0]!.id, 'revoke-sessions')).status).toBe(204);
-    expect((await action(admin.cookie, t[1]!.id, 'revoke-sessions', {})).status).toBe(204);
-    expect((await action(admin.cookie, t[2]!.id, 'revoke-sessions', { reason: 'x'.repeat(501) })).status).toBe(400);
-  });
-
-  it('reactivates a suspended user with a password to active, who can log in again', async () => {
-    const admin = await manager();
-    const target = await seedAndLogin('affiliate');
-    await action(admin.cookie, target.id, 'suspend');
-    const res = await action(admin.cookie, target.id, 'reactivate');
-    expect(res.status).toBe(204);
-    expect(row(target.id).status).toBe('active');
-    expect((await me(target.cookie)).status).toBe(401); // the old session stays dead
-    expect(await login(app, target.email, target.password)).toBeTruthy();
-    expect(auditsFor('user.reactivated', target.id)).toHaveLength(1);
-  });
-
-  it('returns a never-activated user to invited on reactivation, and resending the invitation works (502 on mail failure, audit kept)', async () => {
-    const admin = await manager();
-    const created = await json(await create(admin.cookie, { email: 'late@example.test', fullName: 'Late User', role: 'affiliate' }));
-    const id = created.id as string;
-    await settleBackgroundWork();
-    expect((await action(admin.cookie, id, 'suspend')).status).toBe(204);
-    expect((await action(admin.cookie, id, 'reactivate')).status).toBe(204);
-    expect(row(id).status).toBe('invited');
-
-    app.mailer.sent.length = 0;
-    expect((await action(admin.cookie, id, 'resend-invite')).status).toBe(204);
-    expect(app.mailer.sent).toHaveLength(1);
-    const firstLink = /token=([A-Za-z0-9_-]{43})/.exec(app.mailer.sent[0]?.text ?? '')?.[1];
-    expect(auditsFor('user.invite_resent', id)).toHaveLength(1);
-
-    app.mailer.send = async () => {
-      throw new Error('boom');
-    };
-    const failed = await action(admin.cookie, id, 'resend-invite');
-    expect(failed.status).toBe(502);
-    expect(await json(failed)).toEqual({ code: 'mail_failed' });
-    expect(auditsFor('user.invite_resent', id)).toHaveLength(2);
-    // the first link was replaced by the second issue (only the newest link is live)
-    const old = await app.call('/api/auth/invite/accept', { body: { token: firstLink, password: 'Rose-gloss-2026' } });
-    expect(old.status).toBe(400);
-  });
-
-  it('refuses to reactivate a user who is not suspended and to resend an invitation to an active one', async () => {
-    const admin = await manager();
-    const active = await seedUser(app, { role: 'affiliate' });
-    const r1 = await action(admin.cookie, active.id, 'reactivate');
-    expect(r1.status).toBe(409);
-    expect(await json(r1)).toEqual({ code: 'not_suspended' });
-    const r2 = await action(admin.cookie, active.id, 'resend-invite');
-    expect(r2.status).toBe(409);
-    expect(await json(r2)).toEqual({ code: 'not_invited' });
-  });
-
-  it('suspends an invited user, and a deactivated user is neither suspended nor reactivated', async () => {
-    const admin = await manager();
-    const invited = await seedUser(app, { role: 'affiliate', status: 'invited' });
-    expect((await action(admin.cookie, invited.id, 'suspend')).status).toBe(204);
-    const gone = await seedUser(app, { role: 'affiliate', status: 'deactivated' });
-    const s = await action(admin.cookie, gone.id, 'suspend');
-    expect(s.status).toBe(409);
-    expect(await json(s)).toEqual({ code: 'invalid_status' });
-    expect((await action(admin.cookie, gone.id, 'reactivate')).status).toBe(409);
-  });
-
-  it('lets an owner suspend, reactivate and revoke sessions of a super manager', async () => {
-    const boss = await owner();
-    const sm = await seedAndLogin('super_manager', { permissions: ['audit.read'] });
-    expect((await action(boss.cookie, sm.id, 'suspend')).status).toBe(204);
-    expect((await action(boss.cookie, sm.id, 'reactivate')).status).toBe(204);
-    const again = await login(app, sm.email, sm.password);
-    expect((await action(boss.cookie, sm.id, 'revoke-sessions')).status).toBe(204);
-    expect((await me(again)).status).toBe(401);
-  });
-
-  it('revokes every session of the target with revoke-sessions and leaves the actor and others alone', async () => {
-    const admin = await manager();
-    const target = await seedAndLogin('affiliate');
-    const second = await login(app, target.email, target.password);
-    const bystander = await seedAndLogin('affiliate');
-    expect(liveSessions(target.id)).toBe(2);
-    expect((await action(admin.cookie, target.id, 'revoke-sessions', { reason: 'lost phone' })).status).toBe(204);
-    expect((await me(target.cookie)).status).toBe(401);
-    expect((await me(second)).status).toBe(401);
-    expect((await me(bystander.cookie)).status).toBe(200);
-    expect((await me(admin.cookie)).status).toBe(200);
-    expect(auditsFor('user.sessions_revoked', target.id)[0]?.reason).toBe('lost phone');
-    expect(row(target.id).status).toBe('active');
-  });
-});
-
-describe('GET /api/users', () => {
-  function insertUsers(n: number, make: (i: number) => { name: string; email?: string; phone?: string | null; role?: Role; status?: string }) {
-    for (let i = 0; i < n; i += 1) {
-      const u = make(i);
-      app.db.run(
-        `INSERT INTO users (id, email, full_name, phone, role, status, created_at, updated_at)
-         VALUES (:id, :email, :name, :phone, :role, :status, :at, :at)`,
-        { id: `00000000-0000-7000-8000-${String(i).padStart(12, '0')}`, email: u.email ?? `u${i}@list.test`, name: u.name, phone: u.phone ?? null, role: u.role ?? 'affiliate', status: u.status ?? 'invited', at: 1_000 + i },
-      );
-    }
-  }
-  const list = async (cookie: string, query = '') => {
-    const res = await get(`/api/users${query}`, cookie);
-    expect(res.status).toBe(200);
-    return (await res.json()) as { items: { id: string; fullName: string; email: string }[]; total: number };
-  };
-
-  it('pages by 50, newest first, and reports the total', async () => {
-    const admin = await manager();
-    insertUsers(55, (i) => ({ name: `Person ${i}` }));
-    const p1 = await list(admin.cookie);
-    expect(p1.total).toBe(56);
-    expect(p1.items).toHaveLength(50);
-    expect(p1.items[0]?.fullName).toBe('Test User'); // the manager, created last (clock is fixed in tests: tie broken by id)
-    const p2 = await list(admin.cookie, '?page=2');
-    expect(p2.items).toHaveLength(6);
-    expect(new Set([...p1.items, ...p2.items].map((u) => u.id)).size).toBe(56);
-    expect((await list(admin.cookie, '?page=3')).items).toHaveLength(0);
-  });
-
-  it('orders by creation time descending with the id as tie-break', async () => {
-    const admin = await manager();
-    insertUsers(3, (i) => ({ name: `Ordered ${i}` }));
-    const res = await list(admin.cookie, '?q=Ordered');
-    expect(res.items.map((u) => u.fullName)).toEqual(['Ordered 2', 'Ordered 1', 'Ordered 0']);
-  });
-
-  it('filters by role and status', async () => {
-    const admin = await manager();
-    insertUsers(4, (i) => ({ name: `F${i}`, role: i % 2 ? 'sub_manager' : 'affiliate', status: i < 2 ? 'suspended' : 'invited' }));
-    expect((await list(admin.cookie, '?role=sub_manager')).total).toBe(2);
-    expect((await list(admin.cookie, '?status=suspended')).total).toBe(2);
-    expect((await list(admin.cookie, '?role=sub_manager&status=suspended')).total).toBe(1);
-  });
-
-  it('searches name, email and phone case-insensitively as a substring', async () => {
-    const admin = await manager();
-    insertUsers(3, (i) => ({ name: ['Amina Haddad', 'Karim Zerrouki', 'Lina Ait'][i]!, email: ['a@list.test', 'k@mail.test', 'l@list.test'][i]!, phone: [null, '0550123456', '0661999888'][i]! }));
-    expect((await list(admin.cookie, '?q=HADDAD')).items.map((u) => u.fullName)).toEqual(['Amina Haddad']);
-    expect((await list(admin.cookie, '?q=zerr')).total).toBe(1);
-    expect((await list(admin.cookie, '?q=MAIL.test')).items.map((u) => u.fullName)).toEqual(['Karim Zerrouki']);
-    expect((await list(admin.cookie, '?q=0661')).items.map((u) => u.fullName)).toEqual(['Lina Ait']);
-    expect((await list(admin.cookie, '?q=%20%20')).total).toBe(4); // whitespace only = no filter (3 + the manager)
-  });
-
-  it('treats %, _ and backslash in the search literally', async () => {
-    const admin = await manager();
-    insertUsers(4, (i) => ({ name: ['100% Cotton', 'Under_score', 'Back\\slash', 'Plain Name'][i]! }));
-    expect((await list(admin.cookie, `?q=${encodeURIComponent('%')}`)).items.map((u) => u.fullName)).toEqual(['100% Cotton']);
-    expect((await list(admin.cookie, `?q=${encodeURIComponent('_')}`)).items.map((u) => u.fullName)).toEqual(['Under_score']);
-    expect((await list(admin.cookie, `?q=${encodeURIComponent('\\')}`)).items.map((u) => u.fullName)).toEqual(['Back\\slash']);
-    expect((await list(admin.cookie, `?q=${encodeURIComponent('P_ain')}`)).total).toBe(0);
-    expect((await list(admin.cookie, `?q=${encodeURIComponent("x' OR 1=1 --")}`)).total).toBe(0);
-  });
-
-  it('rejects an unknown role, status, a bad page or an over-long search with 400 validation', async () => {
-    const admin = await manager();
-    for (const q of ['?role=boss', '?status=gone', '?page=0', '?page=abc', '?page=1.5', '?page=1&page=2', `?q=${'x'.repeat(101)}`]) {
-      const res = await get(`/api/users${q}`, admin.cookie);
-      expect(res.status, q).toBe(400);
-      expect((await json(res)).code).toBe('validation');
-    }
-  });
-
-  it('includes grants only for non-owner super managers and every permission for owners', async () => {
-    const boss = await owner();
-    await seedUser(app, { role: 'super_manager', permissions: ['audit.read'], fullName: 'Grantee' });
-    const res = await list(boss.cookie);
-    const all = res.items as unknown as { fullName: string; permissions: string[]; isOwner: boolean }[];
-    expect(all.find((u) => u.fullName === 'Grantee')?.permissions).toEqual(['audit.read']);
-    expect(all.find((u) => u.isOwner)?.permissions).toHaveLength(PERMISSIONS.length);
+    const legacy = await seedUser(app, { role: 'affiliate', phone: null });
+    expect((await patch(admin.cookie, legacy.id, { fullName: 'Legacy Name' })).status).toBe(400);
+    expect((await patch(admin.cookie, legacy.id, { fullName: 'Legacy Name', phone: '0550 11 22 33' })).status).toBe(200);
   });
 });

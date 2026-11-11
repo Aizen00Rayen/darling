@@ -129,7 +129,7 @@ export interface AffiliateDetail {
   payable: { amount: number; commissions: number; commissionCount: number; adjustments: number };
   unsettledAdjustments: number;
   commissions: AdminCommissionRow[];
-  orders: (MaskedOrder & { id: string; source: string; selfReferral: boolean })[];
+  orders: (Omit<MaskedOrder, 'ref'> & { id: string; number: string; source: string; selfReferral: boolean })[];
   clicks: { id: string; at: string; referrerHost: string | null; landingPath: string; converted: boolean }[];
   payouts: { id: string; amount: number; method: PayoutMethod; reference: string | null; paidAt: string }[];
 }
@@ -279,11 +279,21 @@ function ownTotals(db: Db, clause: string, params: Record<string, Scalar>): OwnT
 // --- self-service ---------------------------------------------------------------------------------------------
 
 interface MaskedOrderRow {
-  number: string; created_at: number; status: string; product_name: string; quantity: number; total: number; wilaya_name: string; customer_name: string; code?: string | null; a_name?: string | null;
+  ref: string; created_at: number; status: string; product_name: string; quantity: number; total: number; wilaya_name: string; customer_name: string; code?: string | null; a_name?: string | null;
 }
 
+/**
+ * SQL for the stable per-person label of an order: its rank (1 = oldest) among the orders of the beneficiary, so the
+ * shop's global sequential number (which would reveal its volume) never reaches influenceuses and sous-managers.
+ * `b` is the SQL expression of the beneficiary; the rank follows whichever side (influenceuse or manager) the person is.
+ */
+const refSql = (b: string): string =>
+  `'#' || CASE WHEN o.affiliate_user_id = ${b}
+     THEN (SELECT count(*) FROM orders x WHERE x.affiliate_user_id = o.affiliate_user_id AND x.seq <= o.seq)
+     ELSE (SELECT count(*) FROM orders x WHERE x.manager_user_id = o.manager_user_id AND x.seq <= o.seq) END`;
+
 const toMasked = (o: MaskedOrderRow): MaskedOrder => ({
-  number: o.number,
+  ref: o.ref,
   createdAt: iso(o.created_at),
   status: o.status,
   productName: o.product_name,
@@ -296,22 +306,22 @@ const toMasked = (o: MaskedOrderRow): MaskedOrder => ({
 
 function ownCommissions(db: Db, where: string, params: Record<string, Scalar>): OwnCommission[] {
   return db
-    .all<{ id: string; number: string; created_at: number; kind: string; amount: number; status: string }>(
-      `SELECT c.id, o.number, o.created_at, c.kind, c.amount, c.status FROM commissions c JOIN orders o ON o.id = c.order_id
+    .all<{ id: string; ref: string; created_at: number; kind: string; amount: number; status: string }>(
+      `SELECT c.id, ${refSql('c.beneficiary_user_id')} AS ref, o.created_at, c.kind, c.amount, c.status FROM commissions c JOIN orders o ON o.id = c.order_id
        WHERE ${where} ORDER BY c.created_at DESC, c.id DESC LIMIT ${RECENT_LIMIT}`,
       params,
     )
-    .map((c) => ({ id: c.id, orderNumber: c.number, orderDate: iso(c.created_at), kind: c.kind as CommissionKind, amount: c.amount, status: c.status as CommissionStatus }));
+    .map((c) => ({ id: c.id, orderRef: c.ref, orderDate: iso(c.created_at), kind: c.kind as CommissionKind, amount: c.amount, status: c.status as CommissionStatus }));
 }
 
 function ownAdjustments(db: Db, userId: string): { adjustments: OwnAdjustment[]; unsettled: number } {
   const adjustments = db
-    .all<{ id: string; amount: number; reason: string; number: string | null; created_at: number; payout_id: string | null }>(
-      `SELECT a.id, a.amount, a.reason, o.number, a.created_at, a.payout_id FROM commission_adjustments a LEFT JOIN orders o ON o.id = a.order_id
+    .all<{ id: string; amount: number; reason: string; ref: string | null; created_at: number; payout_id: string | null }>(
+      `SELECT a.id, a.amount, a.reason, ${refSql('a.beneficiary_user_id')} AS ref, a.created_at, a.payout_id FROM commission_adjustments a LEFT JOIN orders o ON o.id = a.order_id
        WHERE a.beneficiary_user_id = ? ORDER BY a.created_at DESC, a.id DESC LIMIT ${RECENT_LIMIT}`,
       userId,
     )
-    .map((a) => ({ id: a.id, amount: a.amount, reason: a.reason, orderNumber: a.number, createdAt: iso(a.created_at), settled: a.payout_id !== null }));
+    .map((a) => ({ id: a.id, amount: a.amount, reason: a.reason, orderRef: a.ref, createdAt: iso(a.created_at), settled: a.payout_id !== null }));
   const unsettled = db.get<{ s: number | null }>('SELECT sum(amount) AS s FROM commission_adjustments WHERE beneficiary_user_id = ? AND payout_id IS NULL', userId)?.s ?? 0;
   return { adjustments, unsettled };
 }
@@ -332,8 +342,9 @@ export function meAffiliate(db: Db, userId: string, origin: string): MeAffiliate
   const profile = db.get<{ code: string }>('SELECT code FROM affiliate_profiles WHERE user_id = ?', userId);
   if (!profile) throw notFound();
   const orders = db.all<MaskedOrderRow>(
-    `SELECT number, created_at, status, product_name, quantity, total, wilaya_name, customer_name
-     FROM orders WHERE affiliate_user_id = ? ORDER BY created_at DESC, seq DESC LIMIT ${RECENT_LIMIT}`,
+    `SELECT ${refSql('?')} AS ref, o.created_at, o.status, o.product_name, o.quantity, o.total, o.wilaya_name, o.customer_name
+     FROM orders o WHERE o.affiliate_user_id = ? ORDER BY o.created_at DESC, o.seq DESC LIMIT ${RECENT_LIMIT}`,
+    userId,
     userId,
   );
   const counts = db.get<{ n: number; d: number | null }>("SELECT count(*) AS n, sum(status = 'delivered') AS d FROM orders WHERE affiliate_user_id = ?", userId);
@@ -378,9 +389,10 @@ export function meTeam(db: Db, managerId: string): MeTeam {
       };
     });
   const orders = db.all<MaskedOrderRow>(
-    `SELECT o.number, o.created_at, o.status, o.product_name, o.quantity, o.total, o.wilaya_name, o.customer_name, p.code, a.full_name AS a_name
+    `SELECT ${refSql('?')} AS ref, o.created_at, o.status, o.product_name, o.quantity, o.total, o.wilaya_name, o.customer_name, p.code, a.full_name AS a_name
      FROM orders o LEFT JOIN affiliate_profiles p ON p.user_id = o.affiliate_user_id LEFT JOIN users a ON a.id = o.affiliate_user_id
      WHERE o.manager_user_id = ? ORDER BY o.created_at DESC, o.seq DESC LIMIT ${RECENT_LIMIT}`,
+    managerId,
     managerId,
   );
   const orderCount = db.get<{ n: number }>('SELECT count(*) AS n FROM orders WHERE manager_user_id = ?', managerId)?.n ?? 0;

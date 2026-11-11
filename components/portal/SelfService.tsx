@@ -28,7 +28,7 @@ export function MaskedOrdersTable({ orders, withAffiliate = false }: { orders: M
       rows={orders}
       empty="Aucune commande pour le moment."
       columns={[
-        { key: 'number', header: 'Numéro', render: (o) => o.number },
+        { key: 'ref', header: 'Commande', render: (o) => o.ref },
         { key: 'date', header: 'Date', hideBelow: 'sm', render: (o) => formatDateTime(o.createdAt) },
         ...(withAffiliate ? [{ key: 'aff', header: 'Influenceuse', render: (o: MaskedOrder) => (o.affiliate ? `${o.affiliate.name} (${o.affiliate.code})` : '—') }] : []),
         { key: 'customer', header: 'Cliente', render: (o) => o.customer || '—' },
@@ -47,7 +47,7 @@ export function OwnCommissionsTable({ commissions }: { commissions: OwnCommissio
       rows={commissions}
       empty="Aucune commission pour le moment."
       columns={[
-        { key: 'order', header: 'Commande', render: (c) => c.orderNumber },
+        { key: 'order', header: 'Commande', render: (c) => c.orderRef },
         { key: 'date', header: 'Date', hideBelow: 'sm', render: (c) => formatDay(c.orderDate) },
         { key: 'kind', header: 'Type', hideBelow: 'md', render: (c) => commissionKindLabel(c.kind) },
         { key: 'amount', header: 'Montant', render: (c) => <span className="p-money">{formatMoney(c.amount)}</span> },
@@ -87,7 +87,7 @@ export function AdjustmentsNotice({ adjustments, unsettled }: { adjustments: Own
       <ul className="p-list">
         {adjustments.map((a) => (
           <li key={a.id}>
-            {formatDay(a.createdAt)} — {formatSignedMoney(a.amount)} {a.orderNumber ? `(commande ${a.orderNumber})` : ''} {a.settled ? '· déjà déduit' : '· à déduire'}
+            {formatDay(a.createdAt)} — {formatSignedMoney(a.amount)} {a.orderRef ? `(commande ${a.orderRef})` : ''} {a.settled ? '· déjà déduit' : '· à déduire'}
           </li>
         ))}
       </ul>

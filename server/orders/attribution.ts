@@ -1,4 +1,4 @@
-import { AFFILIATE_CODE_PATTERN, normalizePhone } from '@/shared';
+import { AFFILIATE_CODE_PATTERN, HOLD_REASON_NO_PHONE, HOLD_REASON_SELF_REFERRAL, normalizePhone } from '@/shared';
 import type { Config } from '../config';
 import type { Db } from '../db/sqlite';
 import { refCookieValue, verifyRef } from '../affiliates/ref';
@@ -40,12 +40,15 @@ const samePhone = (customer: string, other: string | null): boolean => other !==
 
 function build(tx: Db, affiliateUserId: string, phone: string, clickId: string | null): Attribution {
   const state = stateOf(tx, affiliateUserId);
+  const selfReferral = samePhone(phone, state.affiliatePhone) || samePhone(phone, state.managerPhone);
   return {
     affiliateUserId,
     managerUserId: state.managerUserId,
     clickId,
     // The customer is the influenceuse herself (or her manager): the commissions are held until an admin looks.
-    selfReferral: samePhone(phone, state.affiliatePhone) || samePhone(phone, state.managerPhone),
+    selfReferral,
+    // Without a phone on file the guard cannot work: hold too (defence in depth, the API requires a phone).
+    holdReason: selfReferral ? HOLD_REASON_SELF_REFERRAL : state.affiliatePhone === null || state.affiliatePhone.trim() === '' ? HOLD_REASON_NO_PHONE : null,
   };
 }
 

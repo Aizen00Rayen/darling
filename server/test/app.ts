@@ -137,6 +137,8 @@ export interface SeedUserInput {
   permissions?: Permission[];
   status?: UserStatus;
   totp?: boolean;
+  /** Default: a phone for roles that require one (influenceuse, sous-manager), none for super managers. */
+  phone?: string | null;
 }
 
 export interface SeededUser {
@@ -164,13 +166,14 @@ export async function seedUser(app: TestApp, input: SeedUserInput): Promise<Seed
   const totpSecret = input.totp ? newTotpSecret() : undefined;
   const now = app.clock.now();
   app.db.run(
-    `INSERT INTO users (id, email, password_hash, full_name, role, status, is_owner, totp_secret_enc, totp_enabled, created_at, updated_at)
-     VALUES (:id, :email, :hash, :name, :role, :status, :owner, :totp, :totpOn, :now, :now)`,
+    `INSERT INTO users (id, email, password_hash, full_name, phone, role, status, is_owner, totp_secret_enc, totp_enabled, created_at, updated_at)
+     VALUES (:id, :email, :hash, :name, :phone, :role, :status, :owner, :totp, :totpOn, :now, :now)`,
     {
       id,
       email,
       hash: input.status === 'invited' ? null : await cachedHash(password),
       name: input.fullName ?? 'Test User',
+      phone: input.phone !== undefined ? input.phone : input.role === 'super_manager' ? null : '0550000000',
       role: input.role,
       status: input.status ?? 'active',
       owner: input.isOwner ?? false,

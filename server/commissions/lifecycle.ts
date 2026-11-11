@@ -1,4 +1,4 @@
-import { HOLD_REASON_SELF_REFERRAL, type OrderStatus } from '@/shared';
+import type { OrderStatus } from '@/shared';
 import type { Clock } from '../clock';
 import type { Db } from '../db/sqlite';
 import { recordAudit } from '../audit';
@@ -17,12 +17,13 @@ export interface CommissionOrder {
   id: string;
   affiliateUserId: string;
   managerUserId: string | null;
-  selfReferral: boolean;
+  /** Commissions are created on hold with this reason (null = not held). */
+  holdReason: string | null;
 }
 
 /** Creates the `pending` commissions of a freshly inserted, attributed order: the influenceuse's and her manager's. */
 export function createCommissions(tx: Db, clock: Pick<Clock, 'now'>, order: CommissionOrder, now: number): void {
-  const hold = order.selfReferral;
+  const hold = order.holdReason !== null;
   const insert = (kind: 'affiliate' | 'manager', beneficiary: string, amount: number) =>
     tx.run(
       `INSERT INTO commissions (id, order_id, beneficiary_user_id, kind, amount, status, on_hold, hold_reason, created_at)
@@ -33,11 +34,14 @@ export function createCommissions(tx: Db, clock: Pick<Clock, 'now'>, order: Comm
       kind,
       amount,
       hold,
-      hold ? HOLD_REASON_SELF_REFERRAL : null,
+      order.holdReason,
       now,
     );
-  insert('affiliate', order.affiliateUserId, getSetting(tx, 'commission.affiliate_amount'));
-  if (order.managerUserId !== null) insert('manager', order.managerUserId, getSetting(tx, 'commission.manager_amount'));
+  // A kind configured at 0 DA gets no row at all: a zero commission would sit in `validated` forever (no payout can settle it).
+  const affiliateAmount = getSetting(tx, 'commission.affiliate_amount');
+  if (affiliateAmount > 0) insert('affiliate', order.affiliateUserId, affiliateAmount);
+  const managerAmount = getSetting(tx, 'commission.manager_amount');
+  if (order.managerUserId !== null && managerAmount > 0) insert('manager', order.managerUserId, managerAmount);
 }
 
 export interface LifecycleActor {

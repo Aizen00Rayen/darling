@@ -176,13 +176,23 @@ describe('end to end', () => {
     expect(app.db.get('SELECT count(*) AS n FROM commissions WHERE payout_id = ?', payout.id)).toEqual({ n: 2 });
   });
 
-  it('a zero-amount paid commission creates no adjustment on return (the amount is never zero in the table)', async () => {
+  it('a commission kind configured at 0 DA gets no row at all (nothing stuck in validated); the other kind is unaffected', async () => {
     app.db.run("INSERT INTO settings (key, value, updated_at) VALUES ('commission.affiliate_amount', '0', 1)");
-    const aya = await seedAffiliate(app);
-    const o = makeOrder(app, { clickId: insertClick(app, aya.id) });
-    moveTo(app, staff, o.id, 'confirmed', 'shipped', 'delivered');
-    force(o.id, 'paid');
-    moveTo(app, staff, o.id, 'returned');
+    const { order, boss } = await attributedOrder();
+    expect(commissionsOf(app, order.id).map((c) => [c.kind, c.beneficiary_user_id, c.amount])).toEqual([['manager', boss.id, 200]]);
+    moveTo(app, staff, order.id, 'confirmed', 'shipped', 'delivered', 'returned');
+    expect(commissionsOf(app, order.id).map((c) => c.status)).toEqual(['cancelled']);
+    app.db.run("UPDATE settings SET value = '0' WHERE key = 'commission.manager_amount'");
+    app.db.run("INSERT INTO settings (key, value, updated_at) VALUES ('commission.manager_amount', '0', 1) ON CONFLICT (key) DO UPDATE SET value = '0'");
+    const aya = await seedAffiliate(app, { fullName: 'Bea Dupont' });
+    const none = makeOrder(app, { clickId: insertClick(app, aya.id) });
+    expect(commissionsOf(app, none.id)).toEqual([]);
+    expect(app.db.get('SELECT source, affiliate_user_id FROM orders WHERE id = ?', none.id)).toEqual({ source: 'affiliate', affiliate_user_id: aya.id }); // still attributed
+    moveTo(app, staff, none.id, 'confirmed', 'shipped', 'delivered');
+    expect(app.db.get("SELECT count(*) AS n FROM commissions WHERE status = 'validated'")).toEqual({ n: 0 });
+  });
+
+  it('a paid commission of a zero-amount row never exists, so no zero adjustment is ever needed', () => {
     expect(app.db.get('SELECT count(*) AS n FROM commission_adjustments')).toEqual({ n: 0 });
   });
 

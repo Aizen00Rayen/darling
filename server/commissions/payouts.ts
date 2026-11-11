@@ -1,7 +1,7 @@
 import { PAYOUT_METHODS, type AdminPayoutRow, type PayoutMethod } from '@/shared';
 import type { Clock } from '../clock';
 import type { Db, Scalar } from '../db/sqlite';
-import { HttpFailure, notFound, validation } from '../admin/errors';
+import { forbidden, HttpFailure, notFound, validation } from '../admin/errors';
 import { recordAudit } from '../audit';
 import { newId } from '../ids';
 import { algiersDateString, algiersDayBounds } from '../util/algiers';
@@ -59,6 +59,8 @@ export function createPayout(deps: { db: Db; clock: Clock }, actor: PayoutActor,
 
   return deps.db.transaction((tx) => {
     authorisePermission(tx, actor.userId, 'payouts.manage');
+    // Nobody pays themselves (decided here, inside the transaction, after the actor is re-authorised).
+    if (actor.userId === input.beneficiaryUserId) throw forbidden();
     const now = deps.clock.now();
     if (input.paidAt > algiersDateString(now)) throw validation({ paidAt: 'La date ne peut pas être dans le futur.' });
     const person = tx.get<{ id: string; full_name: string }>('SELECT id, full_name FROM users WHERE id = ?', input.beneficiaryUserId);

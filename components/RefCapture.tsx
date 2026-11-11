@@ -28,7 +28,7 @@ export function RefCapture() {
       forget();
       return;
     }
-    void api('/api/affiliate/click', { method: 'POST', body: { code, landingPath: window.location.pathname } }).finally(forget);
+    void api('/api/affiliate/click', { method: 'POST', body: { code, landingPath: window.location.pathname, referrer: document.referrer.slice(0, 512) } }).finally(forget);
   }, []);
   return null;
 }

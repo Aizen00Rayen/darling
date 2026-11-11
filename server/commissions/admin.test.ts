@@ -297,6 +297,24 @@ describe('payouts', () => {
     expect((await pay(owner.cookie, body(aya.id))).status).toBe(201);
   });
 
+  it('nobody pays themselves: 403 forbidden decided inside the transaction, nothing changes (even for an owner)', async () => {
+    const owner = await who([], true);
+    const aya = await seedAffiliate(app);
+    await delivered(aya, 1);
+    // give the staffer a validated commission of their own through an order they manage
+    const mgr = await seedUser(app, { role: 'super_manager', permissions: ['payouts.manage'] });
+    const cookie = await login(app, mgr.email, mgr.password);
+    app.db.run("UPDATE commissions SET beneficiary_user_id = ? WHERE beneficiary_user_id = ?", mgr.id, aya.id);
+    const self = await pay(cookie, body(mgr.id));
+    expect([self.status, await self.json()]).toEqual([403, { code: 'forbidden' }]);
+    expect(app.db.get('SELECT count(*) AS n FROM payouts')).toEqual({ n: 0 });
+    expect(app.db.get("SELECT count(*) AS n FROM commissions WHERE status = 'paid'")).toEqual({ n: 0 });
+    expect(app.db.get("SELECT count(*) AS n FROM audit_log WHERE action = 'payout.created'")).toEqual({ n: 0 });
+    // someone else can still pay that person
+    expect((await pay(owner.cookie, body(mgr.id))).status).toBe(201);
+    expect((await pay(owner.cookie, body(owner.id))).status).toBe(403);
+  });
+
   it('rolls back completely when anything fails halfway (payout row, marks, adjustments)', async () => {
     const me = await who(['payouts.manage']);
     const aya = await seedAffiliate(app);

@@ -119,7 +119,7 @@ describe('POST /api/affiliate/click', () => {
 
   it('never stores the raw address: only an HMAC of it, derived from the encryption key', async () => {
     const aya = await seedAffiliate(app);
-    await click(app, aya.code, { ip: '203.0.113.77', headers: { Referer: 'https://www.instagram.com/some/path?x=1' } });
+    await click(app, aya.code, { ip: '203.0.113.77', referrer: 'https://www.instagram.com/some/path?x=1' });
     const dump = JSON.stringify(app.db.all('SELECT * FROM affiliate_clicks')) + JSON.stringify(app.db.all('SELECT * FROM audit_log'));
     expect(dump).not.toContain('203.0.113.77');
     const [row] = clicks();
@@ -131,10 +131,10 @@ describe('POST /api/affiliate/click', () => {
     expect(row!.referrer_host).toBe('www.instagram.com');
   });
 
-  it('stores only the host of the Referer (never its path or query), and only a clean landing path', async () => {
+  it('stores only the host of the page-sent referrer (never its path or query), and only a clean landing path', async () => {
     const aya = await seedAffiliate(app);
-    await click(app, aya.code, { ip: '1.1.1.1', headers: { Referer: 'https://l.facebook.com/l.php?u=secret&token=abc' }, landingPath: '/produit/wet-kiss?ref=AYA001#x' });
-    await click(app, aya.code, { ip: '1.1.1.2', headers: { Referer: 'garbage' }, landingPath: '//evil.example/x' });
+    await click(app, aya.code, { ip: '1.1.1.1', referrer: 'https://l.facebook.com/l.php?u=secret&token=abc', landingPath: '/produit/wet-kiss?ref=AYA001#x' });
+    await click(app, aya.code, { ip: '1.1.1.2', referrer: 'garbage', landingPath: '//evil.example/x' });
     await click(app, aya.code, { ip: '1.1.1.3', landingPath: '/a\nb' });
     await click(app, aya.code, { ip: '1.1.1.4' });
     expect(clicks().map((c) => [c.referrer_host, c.landing_path])).toEqual([
@@ -183,6 +183,28 @@ describe('POST /api/affiliate/click', () => {
   });
 });
 
+describe('referrer host', () => {
+  it('ignores the Referer HEADER entirely (only the body referrer counts)', async () => {
+    const aya = await seedAffiliate(app);
+    await click(app, aya.code, { ip: '1.1.1.1', headers: { Referer: 'https://header.example/x' } });
+    expect(clicks()[0]!.referrer_host).toBeNull();
+  });
+
+  it('stores null for our own site, non-http schemes, junk, over-long values, and keeps a clean external host', async () => {
+    const aya = await seedAffiliate(app);
+    const sent = ['http://localhost/page', 'https://LOCALHOST/', 'javascript:alert(1)', 'data:text/html,x', 'ftp://files.example/x', 'not a url', 'https://t.co/abc?x=1'];
+    for (const [i, referrer] of sent.entries()) await click(app, aya.code, { ip: `2.2.2.${i + 1}`, referrer });
+    expect(clicks().map((c) => c.referrer_host)).toEqual([null, null, null, null, null, null, 't.co']);
+  });
+
+  it('rejects a referrer longer than 512 characters in the body as a validation error (nothing stored)', async () => {
+    const aya = await seedAffiliate(app);
+    const res = await app.call('/api/affiliate/click', { body: { code: aya.code, referrer: 'https://x.example/' + 'a'.repeat(600) } });
+    expect(res.status).toBe(400);
+    expect(clicks()).toHaveLength(0);
+  });
+});
+
 describe('signed cookie', () => {
   const id = '018f0000-0000-7000-8000-000000000001';
   const config = { encryptionKey: Buffer.alloc(32, 1) };
@@ -221,10 +243,12 @@ describe('helpers', () => {
   it('referrerHost keeps only a lower-case host', () => {
     expect(referrerHost('https://WWW.Instagram.com/p/abc?x=1')).toBe('www.instagram.com');
     expect(referrerHost('http://localhost:3000/?ref=AYA001')).toBe('localhost');
+    expect(referrerHost('http://localhost:3000/', 'localhost')).toBeNull();
     expect(referrerHost('not a url')).toBeNull();
     expect(referrerHost('')).toBeNull();
     expect(referrerHost(null)).toBeNull();
     expect(referrerHost('https://' + 'a'.repeat(300) + '.com')).toHaveLength(100);
+    expect(referrerHost('https://' + 'a'.repeat(600) + '.com')).toBeNull();
   });
   it('cleanLandingPath drops query and fragment and refuses odd paths', () => {
     expect(cleanLandingPath('/')).toBe('/');

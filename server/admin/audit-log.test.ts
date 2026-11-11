@@ -199,7 +199,7 @@ describe('GET /api/audit-log', () => {
 
   it('shows the entries the user management writes', async () => {
     const me = await actor('super_manager', { isOwner: true });
-    await app.call('/api/users', { cookie: me.cookie, body: { email: 'new@example.test', fullName: 'New Person', role: 'affiliate' } });
+    await app.call('/api/users', { cookie: me.cookie, body: { email: 'new@example.test', fullName: 'New Person', role: 'affiliate', phone: '0550123456' } });
     const body = await json(await get('/api/audit-log', me.cookie, { entityType: 'user' }));
     expect(body.items[0]).toMatchObject({ action: 'user.created', actor: { id: me.id } });
   });

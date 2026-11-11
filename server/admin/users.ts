@@ -1,4 +1,4 @@
-import { effectivePermissions, PERMISSIONS, type CreateUserInput, type Permission, type Role, type UpdateUserInput, type User, type UserStatus } from '@/shared';
+import { effectivePermissions, PERMISSIONS, PHONE_REQUIRED_MESSAGE, PHONE_REQUIRED_ROLES, type CreateUserInput, type Permission, type Role, type UpdateUserInput, type User, type UserStatus } from '@/shared';
 import type { Clock } from '../clock';
 import type { Config } from '../config';
 import type { Db, Scalar } from '../db/sqlite';
@@ -227,6 +227,7 @@ export function createUser(deps: UsersDeps, actor: Actor, input: CreateUserInput
     if (input.isOwner !== undefined) errors.isOwner = 'Le statut de propriétaire ne concerne que les super managers.';
     if (Object.keys(errors).length > 0) throw validation(errors);
   }
+  if ((PHONE_REQUIRED_ROLES as readonly string[]).includes(input.role) && !input.phone) throw validation({ phone: PHONE_REQUIRED_MESSAGE });
   const email = input.email.trim().toLowerCase();
   const isOwner = input.role === 'super_manager' && input.isOwner === true;
   // An owner holds every permission implicitly: grant rows are never written for one.
@@ -305,6 +306,8 @@ export function updateUser(deps: UsersDeps, actor: Actor, id: string, input: Upd
       if (input.isOwner !== undefined) errors.isOwner = 'Le statut de propriétaire ne concerne que les super managers.';
     }
     if (newRole !== 'affiliate' && input.managerUserId !== undefined && input.managerUserId !== null) errors.managerUserId = 'Le sous-manager ne concerne que les influenceuses.';
+    const finalPhone = input.phone !== undefined ? input.phone : target.phone;
+    if ((PHONE_REQUIRED_ROLES as readonly string[]).includes(newRole) && !finalPhone) errors.phone = PHONE_REQUIRED_MESSAGE;
     if (roleChanged && target.role === 'super_manager' && target.is_owner === 1) errors.role = 'Retirez d’abord le statut de propriétaire.';
     if (Object.keys(errors).length > 0) throw validation(errors);
 

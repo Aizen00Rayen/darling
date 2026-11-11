@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Field, Notice } from '@/ui';
-import { PERMISSIONS, PERMISSION_LABELS, ROLES, ROLE_LABELS } from '@/shared';
+import { PERMISSIONS, PERMISSION_LABELS, PHONE_REQUIRED_MESSAGE, PHONE_REQUIRED_ROLES, ROLES, ROLE_LABELS } from '@/shared';
 import type { Permission, Role, User } from '@/shared';
 import { api } from '@/lib/api/client';
 import { apiMessage, fieldErrorsOf } from '@/lib/portal/messages';
@@ -45,6 +45,7 @@ export function UserForm({ mode, meIsOwner, meId, user, managers = [] }: Props) 
   const ownerTarget = mode === 'edit' && Boolean(user?.isOwner) && !profileOnly;
   const roleLocked = profileOnly || ownerTarget;
   const showPermissions = role === 'super_manager' && !profileOnly && !ownerTarget;
+  const phoneRequired = (PHONE_REQUIRED_ROLES as readonly string[]).includes(role);
   const showOwner = role === 'super_manager' && meIsOwner && !profileOnly;
 
   function togglePermission(permission: Permission, checked: boolean) {
@@ -61,6 +62,7 @@ export function UserForm({ mode, meIsOwner, meId, user, managers = [] }: Props) 
     const local: Record<string, string> = {};
     if (fullName.trim().length < 2) local.fullName = 'Le nom est requis.';
     if (mode === 'create' && email.trim() === '') local.email = 'Adresse e-mail requise.';
+    if (phoneRequired && phone.trim() === '') local.phone = PHONE_REQUIRED_MESSAGE;
     if (Object.keys(local).length > 0) {
       setFieldErrors(local);
       return;
@@ -146,11 +148,11 @@ export function UserForm({ mode, meIsOwner, meId, user, managers = [] }: Props) 
           </Field>
         )}
         <Field
-          label="Téléphone (facultatif)"
-          hint="Numéro mobile algérien, par exemple 0550 12 34 56."
+          label={phoneRequired ? 'Téléphone' : 'Téléphone (facultatif)'}
+          hint={phoneRequired ? 'Obligatoire pour ce rôle. Numéro mobile algérien, par exemple 0550 12 34 56.' : 'Numéro mobile algérien, par exemple 0550 12 34 56.'}
           error={fieldErrors.phone}
         >
-          <input type="tel" name="phone" autoComplete="off" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <input type="tel" name="phone" autoComplete="off" inputMode="tel" aria-required={phoneRequired || undefined} value={phone} onChange={(e) => setPhone(e.target.value)} />
         </Field>
         <Field
           label="Rôle"

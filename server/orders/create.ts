@@ -126,7 +126,7 @@ export function createOrder(deps: OrderDeps, input: OrderInput, options: CreateO
       if (attribution) {
         if (attribution.clickId !== null) tx.run('UPDATE affiliate_clicks SET order_id = ? WHERE id = ? AND order_id IS NULL', id, attribution.clickId);
         // Commissions are created in THIS transaction: an attributed order never exists without them.
-        createCommissions(tx, deps.clock, { id, affiliateUserId: attribution.affiliateUserId, managerUserId: attribution.managerUserId, selfReferral: attribution.selfReferral }, now);
+        createCommissions(tx, deps.clock, { id, affiliateUserId: attribution.affiliateUserId, managerUserId: attribution.managerUserId, holdReason: attribution.holdReason }, now);
       }
       tx.run('INSERT INTO order_status_history (order_id, from_status, to_status, actor_user_id, note, at) VALUES (?, NULL, ?, ?, NULL, ?)', id, 'new', options.createdBy ?? null, now);
       if (options.createdBy !== undefined) {

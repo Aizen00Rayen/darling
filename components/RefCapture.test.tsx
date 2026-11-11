@@ -29,15 +29,30 @@ describe('RefCapture', () => {
     at('/?ref=AYA001&utm_source=ig#order');
     render(<RefCapture />);
     expect(api).toHaveBeenCalledTimes(1);
-    expect(api).toHaveBeenCalledWith('/api/affiliate/click', { method: 'POST', body: { code: 'AYA001', landingPath: '/' } });
+    expect(api).toHaveBeenCalledWith('/api/affiliate/click', { method: 'POST', body: { code: 'AYA001', landingPath: '/', referrer: '' } });
     await vi.waitFor(() => expect(window.location.search).toBe('?utm_source=ig'));
     expect(window.location.hash).toBe('#order');
+  });
+
+  it('sends document.referrer, cut to 512 characters', () => {
+    const real = Object.getOwnPropertyDescriptor(Document.prototype, 'referrer')!;
+    Object.defineProperty(document, 'referrer', { configurable: true, get: () => 'https://www.instagram.com/' + 'a'.repeat(700) });
+    try {
+      at('/?ref=AYA002');
+      render(<RefCapture />);
+      const body = api.mock.calls[0]![1].body;
+      expect(body.referrer.startsWith('https://www.instagram.com/')).toBe(true);
+      expect(body.referrer).toHaveLength(512);
+    } finally {
+      delete (document as unknown as Record<string, unknown>).referrer;
+      void real;
+    }
   });
 
   it('upper-cases a typed code and tolerates surrounding spaces', async () => {
     at('/?ref=%20aya012%20');
     render(<RefCapture />);
-    expect(api).toHaveBeenCalledWith('/api/affiliate/click', { method: 'POST', body: { code: 'AYA012', landingPath: '/' } });
+    expect(api).toHaveBeenCalledWith('/api/affiliate/click', { method: 'POST', body: { code: 'AYA012', landingPath: '/', referrer: '' } });
   });
 
   it.each(['', 'AYA', 'AY001', 'AYA01', 'AYA001x', '<script>', 'AYA001;DROP', 'ÀYA001', 'A'.repeat(500)])('never posts %j, but still cleans the URL', (bad) => {

@@ -82,7 +82,8 @@ export type LoginInput = z.infer<typeof loginInput>;
 export const createUserInput = z.object({
   email: emailSchema,
   fullName: fullNameSchema,
-  phone: phoneSchema.optional(),
+  // Null or empty counts as "no phone": the user service then requires one for the roles that need it.
+  phone: z.preprocess((v) => (v === null || v === '' ? undefined : v), phoneSchema.optional()),
   role: roleSchema,
   permissions: z.array(permissionSchema).optional(),
   isOwner: z.boolean().optional(),

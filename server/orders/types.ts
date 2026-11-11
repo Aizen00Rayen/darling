@@ -58,4 +58,6 @@ export interface Attribution {
   clickId: string | null;
   /** The customer's phone is the influenceuse's (or her manager's): the commissions are created on hold. */
   selfReferral: boolean;
+  /** Why the commissions are created on hold (self-referral or missing phone), else null. */
+  holdReason: string | null;
 }

@@ -14,12 +14,20 @@ export const CLICK_DEDUPE_MS = 30 * 60_000;
 const BOT_AGENT = /bot|crawl|spider|slurp|preview|facebookexternalhit|embedly|whatsapp|telegram|curl|wget|python-requests|httpclient/i;
 export const isBotAgent = (userAgent: string | null): boolean => userAgent !== null && BOT_AGENT.test(userAgent);
 
-/** The host of a Referer URL (lower-case, at most 100 characters), or null. Never the path or the query. */
-export function referrerHost(referer: string | null): string | null {
-  if (!referer || referer.length > 2000) return null;
+/**
+ * The host of the visitor's original referrer (`document.referrer`, sent by the page), lower-case, at most 100
+ * characters, or null for anything that is not an http(s) URL with a real hostname and for our own site (`ownHost`).
+ * Never the path or the query.
+ */
+export function referrerHost(referrer: string | null | undefined, ownHost?: string): string | null {
+  if (!referrer || referrer.length > 512) return null;
   try {
-    const host = new URL(referer).hostname.toLowerCase();
-    return host === '' ? null : host.slice(0, 100);
+    const url = new URL(referrer);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    const host = url.hostname.toLowerCase().replace(/\.$/, '');
+    if (host === '' || !/^[a-z0-9.-]+$/.test(host) && !host.includes(':')) return null;
+    if (ownHost !== undefined && host === ownHost.toLowerCase()) return null;
+    return host.slice(0, 100);
   } catch {
     return null;
   }
@@ -58,7 +66,7 @@ export function findActiveAffiliate(db: Db, code: string): { userId: string } | 
  */
 export function recordClick(
   deps: ClickDeps,
-  input: { code: string; ip: string; referer: string | null; landingPath: unknown },
+  input: { code: string; ip: string; /** `document.referrer` as sent by the page. */ referer: string | null; landingPath: unknown; /** Our own host: a same-site referrer is stored as null. */ ownHost?: string },
 ): { clickId: string; created: boolean } | null {
   return deps.db.transaction((tx) => {
     const affiliate = findActiveAffiliate(tx, input.code);
@@ -81,7 +89,7 @@ export function recordClick(
       affiliate.userId,
       ipHash,
       now,
-      referrerHost(input.referer),
+      referrerHost(input.referer, input.ownHost),
       cleanLandingPath(input.landingPath),
     );
     return { clickId: id, created: true };

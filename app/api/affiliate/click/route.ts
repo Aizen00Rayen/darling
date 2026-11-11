@@ -11,6 +11,8 @@ export const access = { kind: 'public' } as const;
 const body = z.object({
   code: z.string({ error: 'Code requis.' }).max(40, 'Code invalide.'),
   landingPath: z.string().max(300).optional(),
+  /** `document.referrer` of the landing page; only its host is ever stored. */
+  referrer: z.string().max(512, 'Référent invalide.').optional(),
 });
 
 /**
@@ -25,10 +27,10 @@ export const POST = withAccess(access, ({ request, ctx, ip }) =>
     if (limited) return limited;
     const parsed = await parseBody(request, body);
     if (!parsed.ok) return parsed.response;
-    const { code, landingPath } = parsed.data;
+    const { code, landingPath, referrer } = parsed.data;
     if (!AFFILIATE_CODE_PATTERN.test(code) || isBotAgent(request.headers.get('user-agent'))) return noContent();
 
-    const click = recordClick(ctx, { code, ip, referer: request.headers.get('referer'), landingPath });
+    const click = recordClick(ctx, { code, ip, referer: referrer ?? null, landingPath, ownHost: new URL(ctx.config.appOrigin).hostname });
     if (!click) return noContent();
     return noContent({ 'Set-Cookie': refSetCookie(ctx.config, click.clickId, windowDays(ctx.db)) });
   }),

@@ -69,7 +69,7 @@ describe('GET /api/me/affiliate', () => {
       paidTotal: 300,
     });
     expect(body.orders.map((o: { customer: string }) => o.customer).sort()).toEqual(['Fatima B.', 'Nadia']);
-    expect(body.orders[0]).toEqual({ number: expect.any(String), createdAt: expect.any(String), status: expect.any(String), productName: 'Wet Kiss', quantity: 2, total: expect.any(Number), wilayaName: 'Oran', customer: expect.any(String) });
+    expect(body.orders[0]).toEqual({ ref: expect.stringMatching(/^#\d+$/), createdAt: expect.any(String), status: expect.any(String), productName: 'Wet Kiss', quantity: 2, total: expect.any(Number), wilayaName: 'Oran', customer: expect.any(String) });
     expect(body.commissions).toHaveLength(2);
     expect(body.commissions.map((c: { status: string }) => c.status).sort()).toEqual(['paid', 'pending']);
     expect(body.payouts).toEqual([{ id: expect.any(String), amount: 300, method: 'baridimob', reference: 'BM-1', paidAt: expect.any(String) }]);
@@ -98,7 +98,8 @@ describe('GET /api/me/affiliate', () => {
     const res = await get(await asUser(aya), '/api/me/affiliate');
     const body = json(res);
     expect(body.clicks).toBe(1);
-    expect(body.orders.map((o: { number: string }) => o.number)).toEqual([own.number]);
+    expect(body.orders.map((o: { ref: string }) => o.ref)).toEqual(['#1']);
+    expect(res.text).not.toContain(own.number);
     expect(body.commissions).toHaveLength(1);
     expect(body.payouts).toEqual([]);
     expect(body.totals).toMatchObject({ paid: 0, pending: 300 });
@@ -115,7 +116,7 @@ describe('GET /api/me/affiliate', () => {
     moveTo(app, staff, o.id, 'returned');
     const body = json(await get(await asUser(aya), '/api/me/affiliate'));
     expect(body.unsettledAdjustments).toBe(-300);
-    expect(body.adjustments).toEqual([{ id: expect.any(String), amount: -300, reason: 'retour', orderNumber: o.number, createdAt: expect.any(String), settled: false }]);
+    expect(body.adjustments).toEqual([{ id: expect.any(String), amount: -300, reason: 'retour', orderRef: '#1', createdAt: expect.any(String), settled: false }]);
     expect(body.totals.paid).toBe(300);
   });
 
@@ -186,7 +187,7 @@ describe('GET /api/me/team', () => {
     app.db.run('UPDATE affiliate_profiles SET manager_user_id = ? WHERE user_id = ?', rival.id, aya.id);
     const mine = json(await get(await asUser(boss), '/api/me/team'));
     expect(mine.members.map((m: { code: string }) => m.code)).not.toContain(aya.code);
-    expect(mine.orders.map((x: { number: string }) => x.number)).toEqual([o.number]);
+    expect(mine.orders.map((x: { ref: string }) => x.ref)).toEqual(['#1']);
     expect(mine.totals.validated).toBe(200);
     const his = json(await get(await asUser(rival), '/api/me/team'));
     expect(his.members.map((m: { code: string }) => m.code)).toContain(aya.code);
@@ -199,6 +200,44 @@ describe('GET /api/me/team', () => {
     expect((await get(undefined, '/api/me/team')).status).toBe(401);
     expect((await get(await asUser(aya), '/api/me/team')).status).toBe(403);
     expect((await get(await staffCookie([], true), '/api/me/team')).status).toBe(403);
+  });
+});
+
+describe('the shop\'s order numbers never reach influenceuses or sous-managers', () => {
+  it('no number anywhere in /api/me/affiliate and /api/me/team; refs are stable per-person ranks', async () => {
+    const boss = await seedManager(app);
+    const aya = await seedAffiliate(app, { managerId: boss.id });
+    const bea = await seedAffiliate(app, { fullName: 'Bea Dupont', managerId: boss.id });
+    const staff = await seedStaff(app);
+    const payer = await seedUser(app, { role: 'super_manager', permissions: ['payouts.manage'] });
+    const orders = [bea, aya, bea, aya].map((p) => privateOrder(insertClick(app, p.id)));
+    moveTo(app, staff, orders[1]!.id, 'confirmed', 'shipped', 'delivered');
+    createPayout(app, { userId: payer.id, ip: 'x', requestId: 'r' }, { beneficiaryUserId: aya.id, method: 'cash', paidAt: new Date(app.clock.now()).toISOString().slice(0, 10) });
+    moveTo(app, staff, orders[1]!.id, 'returned');
+    const mine = await get(await asUser(aya), '/api/me/affiliate');
+    const team = await get(await asUser(boss), '/api/me/team');
+    for (const res of [mine, team]) {
+      expect(res.text).not.toMatch(/DL-\d{2}-\d{6}/);
+      for (const o of orders) expect(res.text).not.toContain(o.number);
+      expect(res.text).not.toMatch(/"number"|"orderNumber"/);
+    }
+    // Aya's own ranks: her orders are her #1 and #2 whatever the global sequence says (#2 and #4 globally)
+    expect(json(mine).orders.map((o: { ref: string }) => o.ref).sort()).toEqual(['#1', '#2']);
+    expect(json(mine).commissions.map((c: { orderRef: string }) => c.orderRef).sort()).toEqual(['#1', '#2']);
+    expect(json(mine).adjustments[0].orderRef).toBe('#1');
+    // the manager ranks the whole team's orders: #1..#4
+    expect(json(team).orders.map((o: { ref: string }) => o.ref).sort()).toEqual(['#1', '#2', '#3', '#4']);
+    // refs do not change when a newer order arrives
+    privateOrder(insertClick(app, aya.id));
+    expect(json(await get(await asUser(aya), '/api/me/affiliate')).orders.map((o: { ref: string }) => o.ref).sort()).toEqual(['#1', '#2', '#3']);
+  });
+
+  it('staff screens keep the real number', async () => {
+    const aya = await seedAffiliate(app);
+    const o = privateOrder(insertClick(app, aya.id));
+    const me = await staffCookie(['commissions.manage']);
+    expect(json(await get(me, `/api/affiliates/${aya.id}`)).orders[0].number).toBe(o.number);
+    expect(json(await get(me, '/api/commissions')).items[0].orderNumber).toBe(o.number);
   });
 });
 
