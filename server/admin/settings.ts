@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { SETTINGS, type SettingKey } from '@/shared';
+import { isOwnerOnlySetting, SETTINGS, type SettingKey } from '@/shared';
 import type { Clock } from '../clock';
 import type { Db } from '../db/sqlite';
 import { recordAudit } from '../audit';
@@ -68,14 +68,12 @@ export function updateSetting(deps: { db: Db; clock: Clock }, actor: SettingsAct
   return { key, value: next };
 }
 
-/** Keys under `security.` change how everyone signs in: only an owner may change them. */
-const OWNER_ONLY_PREFIX = 'security.';
-
+/** `security.*` (how everyone signs in), `commission.*` and `attribution.*` (what money is owed): owners only. */
 function assertMayManageSettings(tx: Db, userId: string, key: string): void {
   const self = tx.get<{ status: string; role: string; is_owner: number }>('SELECT status, role, is_owner FROM users WHERE id = ?', userId);
   if (self?.status !== 'active' || self.role !== 'super_manager') throw forbidden();
   if (self.is_owner === 1) return; // an owner holds every permission
-  if (key.startsWith(OWNER_ONLY_PREFIX)) throw ownerRequired();
+  if (isOwnerOnlySetting(key)) throw ownerRequired();
   if (!tx.get("SELECT 1 AS ok FROM user_permissions WHERE user_id = ? AND permission = 'settings.manage'", userId)) throw forbidden();
 }
 

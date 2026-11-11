@@ -5,6 +5,7 @@ import type { Db, Scalar } from '../db/sqlite';
 import { recordAudit } from '../audit';
 import { revokeUserSessions } from '../auth/sessions';
 import { issueInviteMail } from '../auth/tokens';
+import { createProfile, readAffiliateInfo, readProfile, setManager } from '../affiliates/profiles';
 import { newId } from '../ids';
 import { log } from '../log';
 import type { Mail, Mailer } from '../mail/mailer';
@@ -66,7 +67,7 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-function toDto(row: Row, grants: Permission[]): User {
+function toDto(row: Row, grants: Permission[], affiliate?: User['affiliate']): User {
   const isOwner = row.is_owner === 1;
   return {
     id: row.id,
@@ -80,6 +81,7 @@ function toDto(row: Row, grants: Permission[]): User {
     twoFactorEnabled: row.totp_enabled === 1,
     lastLoginAt: row.last_login_at === null ? null : new Date(row.last_login_at).toISOString(),
     createdAt: new Date(row.created_at).toISOString(),
+    ...(affiliate ? { affiliate } : {}),
   };
 }
 
@@ -208,7 +210,7 @@ export function getUser(db: Db, id: string): User {
   assertId(id);
   const row = readUser(db, id);
   if (!row) throw notFound();
-  return toDto(row, loadGrants(db, id));
+  return toDto(row, loadGrants(db, id), readAffiliateInfo(db, id));
 }
 
 // --- create -----------------------------------------------------------------------------------------
@@ -229,8 +231,11 @@ export function createUser(deps: UsersDeps, actor: Actor, input: CreateUserInput
   const isOwner = input.role === 'super_manager' && input.isOwner === true;
   // An owner holds every permission implicitly: grant rows are never written for one.
   const grants = input.role === 'super_manager' && !isOwner ? sortGrants(input.permissions ?? []) : [];
+  if (input.role !== 'affiliate' && input.managerUserId !== undefined && input.managerUserId !== null) {
+    throw validation({ managerUserId: 'Le sous-manager ne concerne que les influenceuses.' });
+  }
 
-  let created: { row: Row; mail: Mail };
+  let created: { row: Row; mail: Mail; affiliate: User['affiliate'] };
   try {
     created = deps.db.transaction((tx) => {
       const self = authoriseActor(tx, actor);
@@ -245,6 +250,8 @@ export function createUser(deps: UsersDeps, actor: Actor, input: CreateUserInput
       );
       for (const permission of grants) tx.run('INSERT INTO user_permissions (user_id, permission) VALUES (?, ?)', id, permission);
       const row = readUser(tx, id) as Row;
+      // An influenceuse gets her profile and code in this same transaction (a failure rolls the account back too).
+      if (input.role === 'affiliate') createProfile(tx, actor, { id, fullName: row.full_name }, input.managerUserId ?? null, now);
       recordAudit(tx, {
         actorUserId: actor.userId,
         action: 'user.created',
@@ -256,7 +263,7 @@ export function createUser(deps: UsersDeps, actor: Actor, input: CreateUserInput
         at: now,
       });
       const mail = issueInviteMail(deps, tx, { id, email, fullName: row.full_name, role: row.role });
-      return { row, mail };
+      return { row, mail, affiliate: input.role === 'affiliate' ? readAffiliateInfo(tx, id) : undefined };
     }, 'immediate');
   } catch (err) {
     // A racing writer can still win at the unique index; it is the same answer as the pre-check's.
@@ -264,7 +271,7 @@ export function createUser(deps: UsersDeps, actor: Actor, input: CreateUserInput
     throw err;
   }
   sendMailInBackground(deps.mailer, created.mail, 'mail.invite_failed');
-  return toDto(created.row, grants);
+  return toDto(created.row, grants, created.affiliate);
 }
 
 // --- update -----------------------------------------------------------------------------------------
@@ -297,6 +304,7 @@ export function updateUser(deps: UsersDeps, actor: Actor, id: string, input: Upd
       if (input.permissions !== undefined) errors.permissions = 'Les permissions ne concernent que les super managers.';
       if (input.isOwner !== undefined) errors.isOwner = 'Le statut de propriétaire ne concerne que les super managers.';
     }
+    if (newRole !== 'affiliate' && input.managerUserId !== undefined && input.managerUserId !== null) errors.managerUserId = 'Le sous-manager ne concerne que les influenceuses.';
     if (roleChanged && target.role === 'super_manager' && target.is_owner === 1) errors.role = 'Retirez d’abord le statut de propriétaire.';
     if (Object.keys(errors).length > 0) throw validation(errors);
 
@@ -310,10 +318,18 @@ export function updateUser(deps: UsersDeps, actor: Actor, id: string, input: Upd
     else finalGrants = submittedGrants ?? grants;
     const grantsChanged = !sameList(finalGrants, grants);
 
+    // Influenceuse profile: created when someone becomes one (or never had it), kept when they stop being one.
+    const profile = readProfile(tx, target.id);
+    const needsProfile = newRole === 'affiliate' && !profile;
+    const wantedManager = input.managerUserId === undefined || newRole !== 'affiliate' ? undefined : input.managerUserId;
+    const managerChanged = wantedManager !== undefined && wantedManager !== (profile?.manager_user_id ?? null);
+
     const fullName = input.fullName !== undefined && input.fullName !== target.full_name ? input.fullName : undefined;
     const phoneChanged = input.phone !== undefined && input.phone !== target.phone;
     const phone = phoneChanged ? (input.phone ?? null) : null;
-    if (fullName === undefined && !phoneChanged && !roleChanged && !ownerChanged && !grantsChanged) return toDto(target, grants);
+    if (fullName === undefined && !phoneChanged && !roleChanged && !ownerChanged && !grantsChanged && !needsProfile && !managerChanged) {
+      return toDto(target, grants, readAffiliateInfo(tx, target.id));
+    }
 
     tx.run(
       `UPDATE users SET full_name = COALESCE(:name, full_name), phone = CASE WHEN :setPhone THEN :phone ELSE phone END, role = :role, is_owner = :owner, updated_at = :now
@@ -324,6 +340,9 @@ export function updateUser(deps: UsersDeps, actor: Actor, id: string, input: Upd
       tx.run('DELETE FROM user_permissions WHERE user_id = ?', target.id);
       for (const permission of finalGrants) tx.run('INSERT INTO user_permissions (user_id, permission) VALUES (?, ?)', target.id, permission);
     }
+    const profileActor = { userId: actor.userId, ip: actor.ip, requestId: actor.requestId };
+    if (needsProfile) createProfile(tx, profileActor, { id: target.id, fullName: fullName ?? target.full_name }, wantedManager ?? null, now);
+    else if (managerChanged) setManager(tx, profileActor, target.id, wantedManager ?? null, now);
     // Design 4.4.5: a change of role, permissions or owner flag takes effect at once, not at next login.
     if (roleChanged || grantsChanged || ownerChanged) revokeUserSessions(tx, target.id, undefined, now);
 
@@ -340,7 +359,7 @@ export function updateUser(deps: UsersDeps, actor: Actor, id: string, input: Upd
       requestId: actor.requestId,
       at: now,
     });
-    return toDto(updated, finalGrants);
+    return toDto(updated, finalGrants, readAffiliateInfo(tx, target.id));
   });
 }
 

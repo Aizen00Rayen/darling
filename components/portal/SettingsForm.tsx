@@ -3,36 +3,60 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Field, Notice } from '@/ui';
-import { SETTINGS } from '@/shared';
+import { SETTINGS, isOwnerOnlySetting } from '@/shared';
 import type { SettingKey } from '@/shared';
 import { api } from '@/lib/api/client';
 import { apiMessage } from '@/lib/portal/messages';
 
-type Values = { 'security.require_2fa_super_managers': boolean; 'company.name': string };
+export type SettingValues = {
+  'security.require_2fa_super_managers': boolean;
+  'company.name': string;
+  'commission.affiliate_amount': number;
+  'commission.manager_amount': number;
+  'attribution.window_days': number;
+};
 
 const KEYS = Object.keys(SETTINGS) as SettingKey[];
 
-export function SettingsForm({ initial, isOwner = false }: { initial: Values; isOwner?: boolean }) {
+type NumberSpec = { label: string; hint: string; min: number; max: number };
+/** French labels of the numeric settings (whole numbers, owner-only). */
+export const NUMBER_SETTINGS: Partial<Record<SettingKey, NumberSpec>> = {
+  'commission.affiliate_amount': { label: 'Commission de l’influenceuse (DA)', hint: 'Montant par commande livrée. Il est figé sur chaque commande à sa création : changer ce réglage ne touche que les prochaines commandes.', min: 0, max: 100_000 },
+  'commission.manager_amount': { label: 'Commission du sous-manager (DA)', hint: 'Montant par commande livrée de son équipe, figé lui aussi à la création de la commande.', min: 0, max: 100_000 },
+  'attribution.window_days': { label: 'Durée d’attribution (jours)', hint: 'Une commande est attribuée à une influenceuse si le clic sur son lien date de moins de ce nombre de jours.', min: 1, max: 365 },
+};
+
+export function SettingsForm({ initial, isOwner = false }: { initial: SettingValues; isOwner?: boolean }) {
   return (
     <div className="p-stack">
       {KEYS.map((key) => (
-        <SettingCard key={key} settingKey={key} initial={initial[key]} locked={key.startsWith('security.') && !isOwner} />
+        <SettingCard key={key} settingKey={key} initial={initial[key]} locked={isOwnerOnlySetting(key) && !isOwner} />
       ))}
     </div>
   );
 }
 
-function SettingCard({ settingKey, initial, locked }: { settingKey: SettingKey; initial: boolean | string; locked: boolean }) {
+function SettingCard({ settingKey, initial, locked }: { settingKey: SettingKey; initial: boolean | string | number; locked: boolean }) {
   const router = useRouter();
-  const [value, setValue] = useState<boolean | string>(initial);
+  const [value, setValue] = useState<boolean | string>(typeof initial === 'number' ? String(initial) : initial);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  const number = NUMBER_SETTINGS[settingKey];
 
   async function save() {
     if (busy || locked) return;
+    let body: boolean | string | number = value;
+    if (number) {
+      const text = String(value).trim();
+      if (!/^\d{1,7}$/.test(text)) {
+        setMessage({ tone: 'error', text: 'Saisissez un nombre entier.' });
+        return;
+      }
+      body = Number(text);
+    }
     setBusy(true);
     setMessage(null);
-    const result = await api(`/api/settings/${settingKey}`, { method: 'PATCH', body: { value } });
+    const result = await api(`/api/settings/${settingKey}`, { method: 'PATCH', body: { value: body } });
     setBusy(false);
     if (!result.ok) {
       const detail = result.errors ? Object.values(result.errors)[0] : undefined;
@@ -44,10 +68,11 @@ function SettingCard({ settingKey, initial, locked }: { settingKey: SettingKey; 
   }
 
   const isToggle = settingKey === 'security.require_2fa_super_managers';
+  const title = number ? number.label : isToggle ? 'Double authentification obligatoire pour les Super Managers' : 'Nom de l’entreprise';
   return (
     <section className="p-card glass" aria-labelledby={`s-${settingKey}`}>
       <h2 className="p-card__title" id={`s-${settingKey}`}>
-        {isToggle ? 'Double authentification obligatoire pour les Super Managers' : 'Nom de l’entreprise'}
+        {title}
       </h2>
       {isToggle ? (
         <>
@@ -64,6 +89,10 @@ function SettingCard({ settingKey, initial, locked }: { settingKey: SettingKey; 
             <span>{value === true ? 'Activée' : 'Désactivée'}</span>
           </label>
         </>
+      ) : number ? (
+        <Field label={number.label} hint={number.hint}>
+          <input type="number" inputMode="numeric" step={1} min={number.min} max={number.max} name={settingKey} value={String(value)} disabled={locked} onChange={(e) => setValue(e.target.value)} />
+        </Field>
       ) : (
         <Field label="Nom de l’entreprise">
           <input type="text" maxLength={100} value={String(value)} onChange={(e) => setValue(e.target.value)} />

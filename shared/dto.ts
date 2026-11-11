@@ -49,6 +49,11 @@ export const meSchema = z.object({
 });
 export type Me = z.infer<typeof meSchema>;
 
+const idField = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, 'Sous-manager invalide.');
+
+/** An influenceuse's code and manager, on the user DTO of someone who has an affiliate profile. */
+export const affiliateInfoSchema = z.object({ code: z.string(), managerUserId: z.string().nullable(), managerName: z.string().nullable() });
+
 export const userSchema = z.object({
   id: z.string(),
   email: z.string(),
@@ -61,6 +66,8 @@ export const userSchema = z.object({
   twoFactorEnabled: z.boolean(),
   lastLoginAt: z.string().nullable(),
   createdAt: z.string(),
+  /** Present on single-user reads of someone who has an influenceuse profile (code kept after a role change). */
+  affiliate: affiliateInfoSchema.nullable().optional(),
 });
 export type User = z.infer<typeof userSchema>;
 
@@ -79,6 +86,8 @@ export const createUserInput = z.object({
   role: roleSchema,
   permissions: z.array(permissionSchema).optional(),
   isOwner: z.boolean().optional(),
+  /** Influenceuses only: the sous-manager who manages her (must be active). */
+  managerUserId: idField.nullable().optional(),
 });
 export type CreateUserInput = z.infer<typeof createUserInput>;
 
@@ -91,6 +100,8 @@ export const updateUserInput = z.object({
   role: roleSchema.optional(),
   permissions: z.array(permissionSchema).optional(),
   isOwner: z.boolean().optional(),
+  /** Influenceuses only; null removes the manager. Affects only orders created afterwards. */
+  managerUserId: idField.nullable().optional(),
 });
 export type UpdateUserInput = z.infer<typeof updateUserInput>;
 
