@@ -26,7 +26,7 @@ npm run dev                 # http://localhost:3000
 | `npm run typecheck` | `next typegen` + `tsc --noEmit` |
 | `npm run build` / `npm start` | Production build / server (honours `PORT`) |
 
-Dev mail: `docker compose -p darling -f infra/docker-compose.yml up -d` starts Mailpit (SMTP 1025, inbox http://localhost:8025).
+Dev mail: with `SMTP_URL` empty the invite/reset links are written to the server log (non-production only); or `docker compose -p darling -f infra/docker-compose.yml up -d` starts Mailpit (SMTP 1025, inbox http://localhost:8025).
 
 ## Layout
 

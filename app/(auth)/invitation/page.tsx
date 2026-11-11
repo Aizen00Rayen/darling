@@ -1,16 +1,16 @@
 import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { z } from 'zod';
 import { Notice } from '@/ui';
 import { InvalidLink } from '@/components/auth/InvalidLink';
 import { SetPasswordForm } from '@/components/auth/SetPasswordForm';
-import { apiServer } from '@/lib/api/server';
+import { getServerContext } from '@/server/context';
+import { lookupInvitation } from '@/server/auth/recovery';
+import { logError } from '@/server/log';
 import { MESSAGES } from '@/lib/auth/messages';
 
 // Same format the API issues; checked before the token is put into an API path.
 const TOKEN_FORMAT = /^[A-Za-z0-9_-]{43}$/;
-const inviteSchema = z.object({ email: z.string(), fullName: z.string() });
 
 export const metadata: Metadata = {
   title: 'Invitation — Darling',
@@ -32,9 +32,11 @@ async function Content({ searchParams }: { searchParams: PageProps<'/invitation'
   const title = 'Activer mon compte';
   if (!TOKEN_FORMAT.test(token)) return <InvalidLink title={title} />;
 
-  const res = await apiServer<unknown>(`/api/auth/invite/${token}`);
-  if (!res.ok) {
-    if (res.status === 404) return <InvalidLink title={title} />;
+  let invite: { email: string; fullName: string } | null;
+  try {
+    invite = lookupInvitation(getServerContext(), token);
+  } catch (err) {
+    logError('invitation.lookup_failed', err);
     return (
       <>
         <h1 className="auth-title">{title}</h1>
@@ -45,21 +47,13 @@ async function Content({ searchParams }: { searchParams: PageProps<'/invitation'
       </>
     );
   }
-  const invite = inviteSchema.safeParse(res.data);
-  if (!invite.success) {
-    return (
-      <>
-        <h1 className="auth-title">{title}</h1>
-        <Notice tone="error">{MESSAGES.generic}</Notice>
-      </>
-    );
-  }
+  if (!invite) return <InvalidLink title={title} />;
   return (
     <SetPasswordForm
       mode="invite"
       token={token}
-      username={invite.data.email}
-      title={`Bienvenue, ${invite.data.fullName}`}
+      username={invite.email}
+      title={`Bienvenue, ${invite.fullName}`}
       lead="Choisissez un mot de passe pour activer votre compte."
     />
   );

@@ -1,18 +1,26 @@
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { homePathFor, meSchema } from '@/shared';
 import type { Me, Role } from '@/shared';
-import { apiServer } from '../api/server';
+import { loadMeFromCookie } from '@/server/auth/principal';
+import { getServerContext } from '@/server/context';
+import { logError } from '@/server/log';
 import { safeNextPath } from './next-path';
 
 const ENROLLMENT_PATH = '/compte/securite?setup=1';
 
-/** The signed-in user, or null (no/expired session, API down, or a malformed API response). */
+/** The signed-in user, or null (no/expired session, database error, or a malformed result). Calls the principal loader in-process: no HTTP. */
 export async function getMe(): Promise<Me | null> {
-  const res = await apiServer<unknown>('/api/auth/me');
-  if (!res.ok) return null;
-  const parsed = meSchema.safeParse(res.data);
-  return parsed.success ? parsed.data : null;
+  // cookies() is outside the try: during prerendering it signals "dynamic" by throwing, which must propagate.
+  const cookieHeader = (await cookies()).toString();
+  try {
+    const me = loadMeFromCookie(getServerContext(), cookieHeader);
+    const parsed = meSchema.safeParse(me);
+    return parsed.success ? parsed.data : null;
+  } catch (err) {
+    logError('session.load_failed', err);
+    return null;
+  }
 }
 
 export type RequireUserOptions = {
