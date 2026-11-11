@@ -109,6 +109,13 @@ function checkWritable(dir: string): string | null {
   }
 }
 
+function plaintextAllowedRemote(value: string): boolean {
+  const u = new URL(value);
+  if (u.protocol !== 'smtp:' || u.searchParams.get('starttls') !== 'optional') return false;
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return !(host === 'localhost' || host === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host));
+}
+
 export function loadConfig(env: Env, options: { cwd?: string } = {}): Config {
   const cwd = options.cwd ?? process.cwd();
   const raw = schema.parse(env);
@@ -174,6 +181,9 @@ export function loadConfig(env: Env, options: { cwd?: string } = {}): Config {
     if (/^\d{1,2}$/.test(v)) trustedProxyHops = Number(v);
     else bad('TRUSTED_PROXY_HOPS', 'must be an integer from 0 to 99');
   }
+  if (isProduction && trustedProxyHops === 0 && !issues.some((i) => i.key === 'TRUSTED_PROXY_HOPS')) {
+    bad('TRUSTED_PROXY_HOPS', 'must be at least 1 in production (0 would put every visitor in one rate-limit bucket)');
+  }
 
   // SMTP_URL / MAIL_FROM
   let smtpUrl: string | undefined;
@@ -186,7 +196,8 @@ export function loadConfig(env: Env, options: { cwd?: string } = {}): Config {
     } catch {
       ok = false;
     }
-    if (ok) smtpUrl = v;
+    if (ok && isProduction && plaintextAllowedRemote(v)) bad('SMTP_URL', 'must not allow plaintext SMTP to a non-loopback host in production (remove starttls=optional)');
+    else if (ok) smtpUrl = v;
     else bad('SMTP_URL', 'must be an smtp:// or smtps:// URL');
   }
   const mailFrom = empty(raw.MAIL_FROM) ? undefined : raw.MAIL_FROM!.trim();

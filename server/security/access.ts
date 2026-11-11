@@ -5,7 +5,7 @@ import { resolveAuth, type AuthContext } from '../auth/principal';
 import { getServerContext, type ServerContext } from '../context';
 import { json } from '../http';
 import { logError } from '../log';
-import { clientIp } from '../net/client-ip';
+import { clientIp, noteClientIp } from '../net/client-ip';
 
 export { json, noContent, parseBody, validationFailed } from '../http';
 export type { AuthContext } from '../auth/principal';
@@ -124,6 +124,7 @@ export function withAccess<A extends Access, P = Record<string, string>>(
 
       const params = await routeCtx.params;
       const ip = clientIp(request.headers, undefined, ctx.config.trustedProxyHops);
+      noteClientIp(ip, ctx.config);
       const response = await handler({ request, params, auth: auth as AuthFor<A>, ctx, ip, requestId: randomUUID() });
       return finish(mutable(response));
     } catch (err) {

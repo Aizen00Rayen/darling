@@ -91,7 +91,7 @@ describe('callApi', () => {
   });
 
   it('never lets a protocol-relative or absolute path steer the request elsewhere', async () => {
-    for (const path of ['//evil.example/api/health', 'http://evil.example/api/health', '/\\evil.example/api/health', 'api/health']) {
+    for (const path of ['//evil.example/api/health', 'http://evil.example/api/health', 'api/health']) {
       const res = await callApi(path, {}, { cookieHeader: '' });
       expect(res.status, path).toBe(404);
     }
@@ -100,5 +100,69 @@ describe('callApi', () => {
   it('answers 404 for routes that do not exist yet (M3 pages)', async () => {
     const res = await callApi('/api/users?page=1', {}, { cookieHeader: '' });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('callApi: path hygiene (the path is never trusted to resolve like a URL)', () => {
+  const call = (path: string) => callApi(path, {}, { cookieHeader: '' });
+  const bad = async (path: string) => {
+    const res = await call(path);
+    expect(res.status, path).toBe(400);
+    expect(await res.json(), path).toEqual({ code: 'bad_request' });
+  };
+
+  it('refuses dot segments, so /api/users/../auth/me can never reach another route', async () => {
+    for (const p of ['/api/users/../auth/me', '/api/auth/./me', '/api/auth/me/..', '/api/../api/health', '/api/auth/invite/..']) await bad(p);
+  });
+
+  it('refuses encoded dots, encoded slashes and backslashes (any case), control characters and fragments', async () => {
+    for (const p of [
+      '/api/users/%2e%2e/auth/me', '/api/users/%2E%2E/auth/me', '/api/users/.%2e/auth/me', '/api/users/%2e/x',
+      '/api/auth%2fme', '/api/auth%2Fme', '/api/auth/invite/a%2fb', '/api/auth%5cme', '/api/auth%5Cme', '/api\\auth/me',
+      '/api/health\n', '/api/hea\u0000lth', '/api/health\r\nX: y', '/api/health#frag', '/api/auth/in vite/x', '/api//health',
+    ]) await bad(p);
+  });
+
+  it('refuses a malformed percent escape', async () => {
+    await bad('/api/auth/invite/%E0%A4%A');
+  });
+
+  it('keeps a query string out of the path checks, and a dot-looking query is just a query', async () => {
+    expect((await call('/api/health?probe=1')).status).toBe(200);
+    expect((await call('/api/health?next=/../auth/me')).status).toBe(200);
+    expect((await call('/api/health/?a=1')).status).toBe(200);
+  });
+
+  it('lets properly encoded parameters through', async () => {
+    expect((await call(`/api/auth/invite/${encodeURIComponent('a b/c')}`)).status).toBe(400); // %2F is refused outright
+    expect((await call(`/api/auth/invite/${encodeURIComponent('abc_déf')}`)).status).toBe(404);
+  });
+
+  it('never dispatches a different route than the one the path names', async () => {
+    const u = await seedUser(app, { role: 'affiliate' });
+    const cookie = await login(app, u.email, u.password);
+    const res = await callApi('/api/users/../auth/me', {}, { cookieHeader: cookie });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('callApi: client address', () => {
+  it('forwards X-Forwarded-For and X-Real-IP so in-process calls are rate limited by the real client', async () => {
+    const send = (ip: string) =>
+      callApi('/api/auth/login', { method: 'POST', body: { email: 'nobody@example.test', password: 'Whatever-123' } }, { cookieHeader: '', clientHeaders: { 'x-forwarded-for': ip } });
+    for (let i = 0; i < 5; i += 1) expect((await send('198.51.100.30')).status).toBe(401);
+    expect((await send('198.51.100.30')).status).toBe(429);
+    expect((await send('198.51.100.31')).status).toBe(401);
+    const real = (ip: string) =>
+      callApi('/api/auth/login', { method: 'POST', body: { email: 'nobody@example.test', password: 'Whatever-123' } }, { cookieHeader: '', clientHeaders: { 'x-real-ip': ip } });
+    for (let i = 0; i < 5; i += 1) expect((await real('198.51.100.40')).status).toBe(401);
+    expect((await real('198.51.100.40')).status).toBe(429);
+  });
+
+  it('sends nothing when no client headers are given', async () => {
+    for (let i = 0; i < 6; i += 1) {
+      const res = await callApi('/api/auth/login', { method: 'POST', body: { email: 'nobody@example.test', password: 'Whatever-123' } }, { cookieHeader: '' });
+      expect(res.status).toBe(401); // the shared "unknown" bucket has a 4x budget
+    }
   });
 });

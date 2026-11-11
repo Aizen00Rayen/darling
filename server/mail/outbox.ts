@@ -1,3 +1,4 @@
+import { after } from 'next/server';
 import { log } from '../log';
 import type { Mail, Mailer } from './mailer';
 
@@ -12,13 +13,29 @@ function describe(err: unknown): { errName: string; errCode?: string } {
   return { errName: err instanceof Error ? err.name : 'unknown', ...(typeof code === 'string' ? { errCode: code } : {}) };
 }
 
-/** Runs `work` on a later turn of the event loop (after the current response has been built). */
+/**
+ * Schedules `work` with Next's `after()`: it runs once the response has been sent, so nothing about it is awaited
+ * by the request. Outside a request scope (scripts, tests) `after()` throws; the work then runs on a later turn of
+ * the event loop instead. `settleBackgroundWork` waits for both.
+ */
 export function runInBackground(event: string, work: () => void | Promise<void>): void {
-  const task: Promise<void> = new Promise<void>((resolve) => setImmediate(resolve))
-    .then(work)
-    .catch((err: unknown) => log.error(event, describe(err)))
-    .finally(() => pending.delete(task));
+  let done!: () => void;
+  const task = new Promise<void>((resolve) => (done = resolve)).finally(() => pending.delete(task));
   pending.add(task);
+  const run = async () => {
+    try {
+      await work();
+    } catch (err) {
+      log.error(event, describe(err));
+    } finally {
+      done();
+    }
+  };
+  try {
+    after(run);
+  } catch {
+    setImmediate(() => void run());
+  }
 }
 
 export function sendMailInBackground(mailer: Mailer, mail: Mail, event = 'mail.send_failed'): void {

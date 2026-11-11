@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, login, seedUser, type TestApp } from '@/server/test/app';
 
-const cookieJar = { value: '' };
+const { cookieJar, incoming } = vi.hoisted(() => ({ cookieJar: { value: '' }, incoming: new Map<string, string>() }));
 vi.mock('next/server', () => ({ connection: async () => undefined }));
-vi.mock('next/headers', () => ({ cookies: async () => ({ toString: () => cookieJar.value }) }));
+vi.mock('next/headers', () => ({
+  cookies: async () => ({ toString: () => cookieJar.value }),
+  headers: async () => ({ get: (k: string) => incoming.get(k) ?? null }),
+}));
 
 import { apiServer } from './server';
 
@@ -11,6 +14,7 @@ let app: TestApp;
 beforeEach(() => {
   app = createTestApp();
   cookieJar.value = '';
+  incoming.clear();
 });
 afterEach(() => app.close());
 
@@ -27,6 +31,15 @@ describe('apiServer (in-process)', () => {
     cookieJar.value = await login(app, u.email, u.password);
     const res = await apiServer<{ id: string }>('/api/auth/me');
     expect(res.ok && res.data.id).toBe(u.id);
+  });
+
+  it('forwards the incoming client address headers into the synthesized request', async () => {
+    incoming.set('x-forwarded-for', '198.51.100.50');
+    for (let i = 0; i < 5; i += 1) await apiServer('/api/auth/login', { method: 'POST', body: { email: 'x@example.test', password: 'Whatever-123' } });
+    const sixth = await apiServer('/api/auth/login', { method: 'POST', body: { email: 'x@example.test', password: 'Whatever-123' } });
+    expect(sixth).toMatchObject({ ok: false, status: 429 });
+    incoming.set('x-forwarded-for', '198.51.100.51');
+    expect(await apiServer('/api/auth/login', { method: 'POST', body: { email: 'x@example.test', password: 'Whatever-123' } })).toMatchObject({ status: 401 });
   });
 
   it('maps errors like the browser helper: status, code and field errors', async () => {

@@ -107,17 +107,68 @@ export interface CallApiInit {
   body?: unknown;
 }
 
+export interface CallApiOptions {
+  /** The CURRENT user's Cookie header, forwarded as is. */
+  cookieHeader: string;
+  /** The incoming request's client-address headers, so in-process calls carry the real client address. */
+  clientHeaders?: { 'x-forwarded-for'?: string | null; 'x-real-ip'?: string | null };
+}
+
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+
 /**
- * Server-side API call without HTTP: builds a Request as the web app's own browser code would (Origin =
- * APP_ORIGIN, X-Requested-With: fetch, the caller's cookie) and runs the registered handler in-process. `path`
- * must be an absolute path starting with a single `/` (it is never parsed as a URL, so it cannot point to
- * another host).
+ * Validates the path part of a callApi path. Rejected (400 `bad_request`): dot segments (`.`/`..`, also
+ * percent-encoded), encoded slashes and backslashes, control characters, fragments, empty inner segments, a
+ * malformed percent escape, and anything `new URL()` would normalise differently from the text given (so the
+ * route that is dispatched is always the one the path literally names).
  */
-export async function callApi(path: string, init: CallApiInit, opts: { cookieHeader: string }): Promise<Response> {
-  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return json(404, { code: 'not_found' });
+function badPath(pathname: string, base: string): boolean {
+  if (CONTROL_CHARS.test(pathname) || pathname.includes('\\') || pathname.includes('#')) return true;
+  if (/%2f|%5c/i.test(pathname)) return true;
+  const segments = pathname.split('/').slice(1);
+  for (const [i, seg] of segments.entries()) {
+    if (seg === '' && i !== segments.length - 1) return true; // "//" inside the path
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(seg);
+    } catch {
+      return true;
+    }
+    if (decoded === '.' || decoded === '..' || seg === '.' || seg === '..') return true;
+    if (CONTROL_CHARS.test(decoded)) return true;
+  }
+  try {
+    return new URL(pathname, base).pathname !== pathname;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Server-side API call without HTTP: builds a Request the way the web app's own browser code would (Origin =
+ * APP_ORIGIN, X-Requested-With: fetch, the caller's cookie) and runs the registered handler in-process.
+ *
+ * It is for server components acting for the CURRENT user (their own cookie) with paths the code itself
+ * constructs; never pass a user-controlled raw path, and encode every interpolated parameter with
+ * encodeURIComponent. What is guaranteed: the path must start with a single `/`, is never parsed as a URL for a
+ * different host, and is refused (400) when it contains dot segments, encoded slashes/dots, backslashes, control
+ * characters or anything the URL parser would rewrite, so the route dispatched is the route the path names.
+ * What is NOT guaranteed: that the route is one the caller meant, or that a parameter value is safe for the
+ * handler: the handlers' own access rules and validation still apply, exactly as for an HTTP request.
+ */
+export async function callApi(path: string, init: CallApiInit, opts: CallApiOptions): Promise<Response> {
+  if (!path.startsWith('/') || path.startsWith('//')) return json(404, { code: 'not_found' });
+  const q = path.indexOf('?');
+  const pathname = q === -1 ? path : path.slice(0, q);
   const { config } = getServerContext();
+  if (badPath(pathname, config.appOrigin)) return json(400, { code: 'bad_request' });
+
   const headers = new Headers({ Origin: config.appOrigin, 'X-Requested-With': 'fetch', Accept: 'application/json' });
   if (opts.cookieHeader) headers.set('Cookie', opts.cookieHeader);
+  for (const name of ['x-forwarded-for', 'x-real-ip'] as const) {
+    const value = opts.clientHeaders?.[name];
+    if (value) headers.set(name, value);
+  }
   const hasBody = init.body !== undefined;
   if (hasBody) headers.set('Content-Type', 'application/json');
   const request = new Request(`${config.appOrigin}${path}`, {

@@ -349,13 +349,14 @@ describe('POST /api/auth/login: rate limit, CSRF and client address', () => {
     expect((await post({ email: aff.email, password: WRONG }, { ip: '198.51.100.2' })).status).toBe(401);
   });
 
-  it('with hops=0 the header is ignored: every request shares the unknown address', async () => {
+  it('with hops=0 (never in production) the header is ignored: every request shares the unknown address, with a 4x budget', async () => {
     app.close();
     app = createTestApp({ config: { trustedProxyHops: 0 } });
     const aff = await seedUser(app, { role: 'affiliate' });
     const statuses: number[] = [];
-    for (let i = 0; i < 6; i += 1) statuses.push((await post({ email: aff.email, password: WRONG })).status);
-    expect(statuses).toEqual([401, 401, 401, 401, 401, 429]);
+    for (let i = 0; i < 21; i += 1) statuses.push((await post({ email: aff.email, password: WRONG })).status);
+    // wrong passwords lock the account after ten, which still answers 401; only the 21st hits the (4x) limit
+    expect(statuses).toEqual([...Array(20).fill(401), 429]);
   });
 
   it('refuses a request without x-requested-with or with a foreign origin before touching anything', async () => {

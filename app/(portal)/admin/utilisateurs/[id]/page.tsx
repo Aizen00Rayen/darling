@@ -45,7 +45,7 @@ async function Content({ params, searchParams }: PageProps<'/admin/utilisateurs/
     );
   }
 
-  const result = await apiServer<unknown>(`/api/users/${id}`);
+  const result = await apiServer<unknown>(`/api/users/${encodeURIComponent(id)}`);
   const parsed = result.ok ? userSchema.safeParse(result.data) : null;
   if (!result.ok || !parsed?.success) {
     return (

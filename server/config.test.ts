@@ -137,6 +137,28 @@ describe('loadConfig production guard rails', () => {
     expect(c).toMatchObject({ isProduction: true, cookieSecure: true, appOrigin: 'https://darling7.store' });
   });
 
+  it('refuses TRUSTED_PROXY_HOPS=0 in production (every client would share one rate-limit bucket) but allows it elsewhere', () => {
+    expect(errorOf(prod({ TRUSTED_PROXY_HOPS: '0' })).keys).toEqual(['TRUSTED_PROXY_HOPS']);
+    expect(loadConfig(prod({ TRUSTED_PROXY_HOPS: '1' })).trustedProxyHops).toBe(1);
+    expect(loadConfig({ ENCRYPTION_KEY: KEY, TRUSTED_PROXY_HOPS: '0' }).trustedProxyHops).toBe(0);
+  });
+
+  it('refuses plaintext-capable SMTP for non-loopback hosts in production, and nothing else', () => {
+    for (const url of ['smtp://mail.example.test:25?starttls=optional', 'smtp://10.0.0.5?starttls=optional', 'smtp://user:pw@mail.example.test?starttls=optional']) {
+      expect(errorOf(prod({ SMTP_URL: url })).keys, url).toEqual(['SMTP_URL']);
+    }
+    for (const url of [
+      'smtp://mail.example.test:587', // STARTTLS is required by default
+      'smtp://mail.example.test:587?starttls=required',
+      'smtps://mail.example.test',
+      'smtp://localhost:1025?starttls=optional', // loopback may stay opportunistic
+      'smtp://127.0.0.1:1025',
+    ]) {
+      expect(loadConfig(prod({ SMTP_URL: url })).smtpUrl, url).toBe(url);
+    }
+    expect(loadConfig({ ENCRYPTION_KEY: KEY, SMTP_URL: 'smtp://mail.example.test?starttls=optional' }).smtpUrl).toBeDefined();
+  });
+
   it('requires APP_ORIGIN', () => {
     expect(errorOf(prod({ APP_ORIGIN: undefined })).keys).toContain('APP_ORIGIN');
   });
