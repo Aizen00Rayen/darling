@@ -25,6 +25,15 @@ describe('navFor', () => {
     expect(labels(navFor('sub_manager', ['orders.read']))).not.toContain('Commandes');
   });
 
+  it('shows Influenceuses and Commissions to commissions.manage holders only, between Commandes and Utilisateurs', () => {
+    const nav = navFor('super_manager', ['users.manage', 'orders.read', 'commissions.manage']);
+    expect(labels(nav)).toEqual(['Tableau de bord', 'Commandes', 'Influenceuses', 'Commissions', 'Utilisateurs', 'Mon compte']);
+    expect(nav.find((i) => i.label === 'Influenceuses')?.href).toBe('/admin/influenceuses');
+    expect(nav.find((i) => i.label === 'Commissions')?.href).toBe('/admin/commissions');
+    expect(labels(navFor('super_manager', ['payouts.manage', 'orders.read']))).not.toContain('Commissions');
+    expect(labels(navFor('affiliate', ['commissions.manage']))).toEqual(['Tableau de bord', 'Mon compte']);
+  });
+
   it('hides entries the super manager has no permission for', () => {
     expect(labels(navFor('super_manager', []))).toEqual(['Tableau de bord', 'Mon compte']);
     expect(labels(navFor('super_manager', ['audit.read']))).toEqual(['Tableau de bord', 'Journal', 'Mon compte']);

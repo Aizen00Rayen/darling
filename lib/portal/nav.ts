@@ -6,6 +6,8 @@ const ACCOUNT: NavItem = { href: '/compte/securite', label: 'Mon compte' };
 
 const ADMIN_PAGES: { item: NavItem; permission: Permission }[] = [
   { item: { href: '/admin/commandes', label: 'Commandes' }, permission: 'orders.read' },
+  { item: { href: '/admin/influenceuses', label: 'Influenceuses' }, permission: 'commissions.manage' },
+  { item: { href: '/admin/commissions', label: 'Commissions' }, permission: 'commissions.manage' },
   { item: { href: '/admin/utilisateurs', label: 'Utilisateurs' }, permission: 'users.manage' },
   { item: { href: '/admin/journal', label: 'Journal' }, permission: 'audit.read' },
   { item: { href: '/admin/parametres', label: 'Paramètres' }, permission: 'settings.manage' },

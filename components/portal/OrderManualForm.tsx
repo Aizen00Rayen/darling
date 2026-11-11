@@ -13,7 +13,7 @@ import { clampQuantity, deskAvailable, resolveMode, summary } from '@/lib/order-
 import { apiMessage, fieldErrorsOf } from '@/lib/portal/messages';
 import { orderSourceLabel, shadeLabel } from '@/lib/portal/orders';
 
-const KNOWN_FIELDS = ['source', 'fullName', 'phone', 'wilayaCode', 'commune', 'mode', 'address', 'shadeCode', 'quantity'];
+const KNOWN_FIELDS = ['affiliateCode', 'source', 'fullName', 'phone', 'wilayaCode', 'commune', 'mode', 'address', 'shadeCode', 'quantity'];
 
 /** Staff entry of an order that came in outside the website (Instagram, WhatsApp...). Prices come from the server. */
 export function OrderManualForm() {
@@ -30,6 +30,7 @@ export function OrderManualForm() {
   const [address, setAddress] = useState('');
   const [shadeCode, setShadeCode] = useState(product.shades[0]?.code ?? '');
   const [quantity, setQuantity] = useState(1);
+  const [affiliateCode, setAffiliateCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -66,6 +67,7 @@ export function OrderManualForm() {
         commune: commune.trim(),
         mode,
         ...(home ? { address: address.trim() } : {}),
+        ...(affiliateCode.trim() !== '' ? { affiliateCode: affiliateCode.trim().toUpperCase() } : {}),
       },
     });
     setBusy(false);
@@ -166,6 +168,10 @@ export function OrderManualForm() {
           <input type="text" name="address" autoComplete="off" maxLength={200} value={address} onChange={(e) => setAddress(e.target.value)} />
         </Field>
       ) : null}
+
+      <Field label="Code influenceuse (facultatif)" hint="Attribue la commande à une influenceuse (par exemple AYA001) : ses commissions seront créées." error={fieldErrors.affiliateCode}>
+        <input type="text" name="affiliateCode" autoComplete="off" autoCapitalize="characters" spellCheck={false} maxLength={12} value={affiliateCode} onChange={(e) => setAffiliateCode(e.target.value)} />
+      </Field>
 
       <dl className="p-dl p-totals" aria-live="polite">
         <div>

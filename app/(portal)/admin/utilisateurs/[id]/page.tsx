@@ -10,6 +10,10 @@ import { UserForm } from '@/components/portal/UserForm';
 import { apiServer } from '@/lib/api/server';
 import { formatDateTime, formatLastLogin } from '@/lib/portal/format';
 import { requireAdmin } from '@/lib/portal/guards';
+import { loadManagers } from '@/lib/portal/managers';
+import { CopyField } from '@/components/portal/CopyField';
+import { getServerContext } from '@/server/context';
+import { affiliateLink } from '@/shared';
 import { statusLabel, statusTone } from '@/lib/portal/labels';
 import { apiMessage } from '@/lib/portal/messages';
 import { firstParam } from '@/lib/portal/query';
@@ -59,6 +63,8 @@ async function Content({ params, searchParams }: PageProps<'/admin/utilisateurs/
   // Only owners edit Super Managers, but everyone may edit their own name and phone.
   const canEdit = user.role !== 'super_manager' || me.isOwner || user.id === me.id;
   const created = firstParam(sp.created) === '1';
+  const managers = canEdit && user.role === 'affiliate' ? await loadManagers() : [];
+  const origin = getServerContext().config.appOrigin;
 
   return (
     <div className="p-stack p-stack--lg">
@@ -114,6 +120,33 @@ async function Content({ params, searchParams }: PageProps<'/admin/utilisateurs/
         </dl>
       </section>
 
+      {user.affiliate ? (
+        <section className="p-card glass" aria-labelledby="d-affiliate">
+          <h2 className="p-card__title" id="d-affiliate">
+            Affiliation
+          </h2>
+          {user.role !== 'affiliate' ? <Notice tone="info">Cette personne n’est plus influenceuse : son code est conservé mais n’attribue plus de commandes.</Notice> : null}
+          <dl className="p-dl">
+            <div>
+              <dt>Code</dt>
+              <dd>
+                <CopyField label="Code d’affiliation" value={user.affiliate.code} />
+              </dd>
+            </div>
+            <div>
+              <dt>Lien d’affiliation</dt>
+              <dd>
+                <CopyField label="Lien d’affiliation" value={affiliateLink(origin, user.affiliate.code)} />
+              </dd>
+            </div>
+            <div>
+              <dt>Sous-manager</dt>
+              <dd>{user.affiliate.managerName ?? 'Aucun'}</dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
+
       <section className="p-card glass" aria-labelledby="d-actions">
         <h2 className="p-card__title" id="d-actions">
           Actions
@@ -126,7 +159,7 @@ async function Content({ params, searchParams }: PageProps<'/admin/utilisateurs/
           <h2 className="p-card__title" id="d-edit">
             Modifier
           </h2>
-          <UserForm mode="edit" meIsOwner={me.isOwner} meId={me.id} user={user} />
+          <UserForm mode="edit" meIsOwner={me.isOwner} meId={me.id} user={user} managers={managers} />
         </section>
       ) : null}
     </div>

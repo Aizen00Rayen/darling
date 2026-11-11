@@ -16,11 +16,13 @@ type Props = {
   /** The signed-in user's id: editing yourself only ever changes your name and phone. */
   meId?: string;
   user?: User;
+  /** Active sous-managers an influenceuse can be assigned to (fetched on the server by the page). */
+  managers?: { id: string; fullName: string }[];
 };
 
-const KNOWN_FIELDS = ['email', 'fullName', 'phone', 'role', 'permissions', 'isOwner'];
+const KNOWN_FIELDS = ['email', 'fullName', 'phone', 'role', 'permissions', 'isOwner', 'managerUserId'];
 
-export function UserForm({ mode, meIsOwner, meId, user }: Props) {
+export function UserForm({ mode, meIsOwner, meId, user, managers = [] }: Props) {
   const router = useRouter();
   const [fullName, setFullName] = useState(user?.fullName ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
@@ -28,6 +30,7 @@ export function UserForm({ mode, meIsOwner, meId, user }: Props) {
   const [role, setRole] = useState<Role>(user?.role ?? 'sub_manager');
   const [isOwner, setIsOwner] = useState(user?.isOwner ?? false);
   const [permissions, setPermissions] = useState<Permission[]>(user?.permissions ?? []);
+  const [managerId, setManagerId] = useState(user?.affiliate?.managerUserId ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -71,6 +74,11 @@ export function UserForm({ mode, meIsOwner, meId, user }: Props) {
     } else if (!profileOnly) {
       body.role = role;
       if (mode === 'create') body.email = email.trim();
+      if (role === 'affiliate') {
+        // Only a change is sent: the manager affects future orders only, and every change is audited.
+        const current = user?.affiliate?.managerUserId ?? '';
+        if (mode === 'create' ? managerId !== '' : managerId !== current) body.managerUserId = managerId === '' ? null : managerId;
+      }
       if (showPermissions) {
         // An owner's permissions are implicit: grants are sent only for someone who is not being made an owner.
         if (!isOwner) body.permissions = permissions;
@@ -166,6 +174,26 @@ export function UserForm({ mode, meIsOwner, meId, user }: Props) {
           </select>
         </Field>
       </div>
+
+      {role === 'affiliate' && !profileOnly ? (
+        <Field
+          label="Sous-manager"
+          error={fieldErrors.managerUserId}
+          hint="Il touche une commission sur les commandes livrées de l’influenceuse. Un changement ne concerne que les prochaines commandes."
+        >
+          <select name="managerUserId" value={managerId} onChange={(e) => setManagerId(e.target.value)}>
+            <option value="">Aucun sous-manager</option>
+            {managerId !== '' && !managers.some((m) => m.id === managerId) ? (
+              <option value={managerId}>{user?.affiliate?.managerName ?? 'Sous-manager actuel'} (inactif)</option>
+            ) : null}
+            {managers.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.fullName}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
 
       {(profileOnly || ownerTarget) && role === 'super_manager' ? (
         <p className="p-lead">

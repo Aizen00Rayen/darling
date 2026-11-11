@@ -9,6 +9,9 @@ import { OrderActions } from '@/components/portal/OrderActions';
 import { OrderNotesForm } from '@/components/portal/OrderNotesForm';
 import { apiServer } from '@/lib/api/server';
 import { formatDateTime } from '@/lib/portal/format';
+import { commissionKindLabel, commissionStatusLabel, commissionStatusTone } from '@/lib/portal/commissions';
+import { isList } from '@/lib/portal/lists';
+import type { AdminCommissionRow } from '@/shared';
 import { requireAdmin } from '@/lib/portal/guards';
 import { apiMessage } from '@/lib/portal/messages';
 import { deliveryModeLabel, formatPhone, orderSourceLabel, orderSourceTone, orderStatusLabel, orderStatusTone, shadeLabel } from '@/lib/portal/orders';
@@ -60,6 +63,9 @@ async function Content({ params, searchParams }: PageProps<'/admin/commandes/[id
     );
   }
   const order = result.data;
+  const canSeeCommissions = me.permissions.includes('commissions.manage');
+  const commissionList = order.attribution && canSeeCommissions ? await apiServer<unknown>(`/api/commissions?order=${encodeURIComponent(order.number)}`) : null;
+  const commissions = commissionList?.ok && isList<AdminCommissionRow>(commissionList.data) ? commissionList.data.items.filter((c) => c.orderId === order.id) : [];
   const created = firstParam(sp.created) === '1';
 
   return (
@@ -160,6 +166,68 @@ async function Content({ params, searchParams }: PageProps<'/admin/commandes/[id
           </div>
         </dl>
       </section>
+
+      {order.attribution ? (
+        <section className="p-card glass" aria-labelledby="o-attribution">
+          <h2 className="p-card__title" id="o-attribution">
+            Affiliation
+          </h2>
+          <dl className="p-dl">
+            <div>
+              <dt>Influenceuse</dt>
+              <dd>
+                {canSeeCommissions ? (
+                  <Link className="p-linkbtn" href={`/admin/influenceuses/${order.attribution.affiliate.userId}`}>
+                    {order.attribution.affiliate.name}
+                  </Link>
+                ) : (
+                  order.attribution.affiliate.name
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Code</dt>
+              <dd>
+                <strong>{order.attribution.affiliate.code}</strong>
+              </dd>
+            </div>
+            <div>
+              <dt>Sous-manager</dt>
+              <dd>{order.attribution.manager?.name ?? 'Aucun'}</dd>
+            </div>
+            <div>
+              <dt>Attribution</dt>
+              <dd>{order.attribution.viaClick ? 'Lien d’affiliation (clic)' : 'Saisie par l’équipe (code)'}</dd>
+            </div>
+            <div>
+              <dt>Auto-référence</dt>
+              <dd>{order.attribution.selfReferral ? <Badge tone="warning">Oui — commissions retenues</Badge> : 'Non'}</dd>
+            </div>
+          </dl>
+          {canSeeCommissions ? (
+            commissions.length > 0 ? (
+              <>
+                <h3 className="p-section-title">Commissions de cette commande</h3>
+                <ul className="p-list" aria-label="Commissions de cette commande">
+                  {commissions.map((c) => (
+                    <li key={c.id}>
+                      {commissionKindLabel(c.kind)} — {c.beneficiary.name} : <strong>{formatMoney(c.amount)}</strong>{' '}
+                      <Badge tone={commissionStatusTone(c.status)}>{commissionStatusLabel(c.status, c.onHold)}</Badge>
+                    </li>
+                  ))}
+                </ul>
+                <p className="p-subtle">
+                  <Link className="p-linkbtn" href={`/admin/commissions?order=${encodeURIComponent(order.number)}`}>
+                    Gérer ces commissions
+                  </Link>
+                </p>
+              </>
+            ) : (
+              <p className="p-lead">Aucune commission pour cette commande.</p>
+            )
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="p-card glass" aria-labelledby="o-actions">
         <h2 className="p-card__title" id="o-actions">

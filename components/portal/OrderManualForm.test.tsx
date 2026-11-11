@@ -107,3 +107,41 @@ describe('OrderManualForm', () => {
     expect((await screen.findByRole('alert')).textContent).toMatch(/permission/);
   });
 });
+
+describe('OrderManualForm: influenceuse code', () => {
+  async function fill(user: ReturnType<typeof userEvent.setup>) {
+    await user.selectOptions(screen.getByLabelText('Provenance'), 'instagram');
+    await user.type(screen.getByLabelText('Nom et prénom'), 'Amel Benali');
+    await user.type(screen.getByLabelText('Téléphone'), '0550123456');
+    await user.selectOptions(screen.getByLabelText('Wilaya'), '16');
+    await user.type(screen.getByLabelText('Commune'), 'Hydra');
+  }
+
+  it('sends the code upper-cased when given, and nothing when blank', async () => {
+    const user = userEvent.setup();
+    render(<OrderManualForm />);
+    await fill(user);
+    await user.type(screen.getByLabelText('Code influenceuse (facultatif)'), 'aya001');
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Enregistrer la commande' }) as HTMLButtonElement).disabled).toBe(false));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la commande' }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect(api.mock.calls[0]![1].body.affiliateCode).toBe('AYA001');
+    cleanup();
+    api.mockClear();
+    render(<OrderManualForm />);
+    await fill(user);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la commande' }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect('affiliateCode' in api.mock.calls[0]![1].body).toBe(false);
+  });
+
+  it('shows the server\'s unknown-code message under the field', async () => {
+    api.mockResolvedValue({ ok: false, status: 400, code: 'validation', errors: { affiliateCode: 'Code influenceuse inconnu ou inactif.' } });
+    const user = userEvent.setup();
+    render(<OrderManualForm />);
+    await fill(user);
+    await user.type(screen.getByLabelText('Code influenceuse (facultatif)'), 'ZZZ999');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la commande' }));
+    expect(await screen.findByText('Code influenceuse inconnu ou inactif.')).toBeTruthy();
+  });
+});

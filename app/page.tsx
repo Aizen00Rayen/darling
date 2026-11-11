@@ -1,6 +1,12 @@
 import { ProductPage } from '@/components/ProductPage';
+import { RefCapture } from '@/components/RefCapture';
 import { defaultProduct } from '@/data/products';
 
 export default function Home() {
-  return <ProductPage product={defaultProduct} />;
+  return (
+    <>
+      <RefCapture />
+      <ProductPage product={defaultProduct} />
+    </>
+  );
 }

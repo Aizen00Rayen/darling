@@ -170,3 +170,75 @@ describe('UserForm (create)', () => {
     expect(options).not.toContain('super_manager');
   });
 });
+
+
+describe('UserForm: influenceuse and her sous-manager', () => {
+  const managers = [
+    { id: '018f0000-0000-7000-8000-0000000000a1', fullName: 'Karim Chef' },
+    { id: '018f0000-0000-7000-8000-0000000000a2', fullName: 'Samia Lead' },
+  ];
+
+  it('shows the Sous-manager select only for the Influenceuse role, listing the managers', async () => {
+    const u = userEvent.setup();
+    render(<UserForm mode="create" meIsOwner managers={managers} />);
+    expect(screen.queryByLabelText('Sous-manager')).toBeNull();
+    await u.selectOptions(screen.getByLabelText('Rôle'), 'affiliate');
+    const select = screen.getByLabelText('Sous-manager') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.text)).toEqual(['Aucun sous-manager', 'Karim Chef', 'Samia Lead']);
+    await u.selectOptions(screen.getByLabelText('Rôle'), 'sub_manager');
+    expect(screen.queryByLabelText('Sous-manager')).toBeNull();
+  });
+
+  it('creates an influenceuse with the chosen manager, or without any', async () => {
+    const u = userEvent.setup();
+    render(<UserForm mode="create" meIsOwner managers={managers} />);
+    await u.type(screen.getByLabelText('Nom complet'), 'Aya Benali');
+    await u.type(screen.getByLabelText('Adresse e-mail'), 'aya@example.test');
+    await u.selectOptions(screen.getByLabelText('Rôle'), 'affiliate');
+    await u.selectOptions(screen.getByLabelText('Sous-manager'), managers[1]!.id);
+    await u.click(screen.getByRole('button', { name: 'Envoyer l’invitation' }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect(api.mock.calls[0]![1].body).toEqual({ fullName: 'Aya Benali', email: 'aya@example.test', role: 'affiliate', managerUserId: managers[1]!.id });
+    cleanup();
+    api.mockClear();
+    render(<UserForm mode="create" meIsOwner managers={managers} />);
+    await u.type(screen.getByLabelText('Nom complet'), 'Aya Benali');
+    await u.type(screen.getByLabelText('Adresse e-mail'), 'aya@example.test');
+    await u.selectOptions(screen.getByLabelText('Rôle'), 'affiliate');
+    await u.click(screen.getByRole('button', { name: 'Envoyer l’invitation' }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect('managerUserId' in api.mock.calls[0]![1].body).toBe(false);
+  });
+
+  it('edit: sends the manager only when it changed (null to clear), and the current one is preselected', async () => {
+    const aya = user({ role: 'affiliate', affiliate: { code: 'AYA001', managerUserId: managers[0]!.id, managerName: 'Karim Chef' } });
+    const [, unchanged] = await submitEdit(aya, { meIsOwner: true, meId: 'x' });
+    expect(unchanged.body).toEqual({ fullName: 'Renamed Person', role: 'affiliate' });
+    cleanup();
+    api.mockClear();
+    const u = userEvent.setup();
+    render(<UserForm mode="edit" meIsOwner meId="x" user={aya} managers={managers} />);
+    expect((screen.getByLabelText('Sous-manager') as HTMLSelectElement).value).toBe(managers[0]!.id);
+    await u.selectOptions(screen.getByLabelText('Sous-manager'), '');
+    await u.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect(api.mock.calls[0]![1].body).toMatchObject({ managerUserId: null });
+  });
+
+  it('keeps an inactive current manager visible, marked "(inactif)", and does not resend it', async () => {
+    const aya = user({ role: 'affiliate', affiliate: { code: 'AYA001', managerUserId: '018f0000-0000-7000-8000-0000000000ff', managerName: 'Ancien Chef' } });
+    render(<UserForm mode="edit" meIsOwner meId="x" user={aya} managers={managers} />);
+    const select = screen.getByLabelText('Sous-manager') as HTMLSelectElement;
+    expect(select.value).toBe('018f0000-0000-7000-8000-0000000000ff');
+    expect([...select.options].map((o) => o.text)).toContain('Ancien Chef (inactif)');
+  });
+
+  it('shows the server\'s manager error under the field', async () => {
+    api.mockResolvedValue({ ok: false, status: 400, code: 'validation', errors: { managerUserId: 'Choisissez un sous-manager actif.' } });
+    const u = userEvent.setup();
+    render(<UserForm mode="edit" meIsOwner meId="x" user={user({ role: 'affiliate' })} managers={managers} />);
+    await u.selectOptions(screen.getByLabelText('Sous-manager'), managers[0]!.id);
+    await u.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    expect(await screen.findByText('Choisissez un sous-manager actif.')).toBeTruthy();
+  });
+});

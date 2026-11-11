@@ -7,6 +7,8 @@ import { Notice, PageHeader } from '@/ui';
 import { ORDER_STATUSES } from '@/shared';
 import { orderStatusLabel } from '@/lib/portal/orders';
 import { orderStats } from '@/server/orders/list';
+import { dashboardTotals } from '@/server/commissions/queries';
+import { formatMoney } from '@/lib/pricing';
 import { getServerContext } from '@/server/context';
 import { requireAdmin } from '@/lib/portal/guards';
 import { firstName } from '@/lib/portal/names';
@@ -16,6 +18,8 @@ export const metadata: Metadata = { title: 'Tableau de bord — Darling', robots
 
 const DESCRIPTIONS: Record<string, string> = {
   '/admin/commandes': 'Suivre, confirmer et expédier les commandes.',
+  '/admin/influenceuses': 'Codes, liens, clics et ventes de chaque influenceuse.',
+  '/admin/commissions': 'Valider, retenir, annuler et payer les commissions.',
   '/admin/utilisateurs': 'Inviter, modifier et suspendre les comptes.',
   '/admin/journal': 'Actions d’administration et connexions.',
   '/admin/parametres': 'Sécurité et informations de l’entreprise.',
@@ -38,11 +42,12 @@ async function Content() {
       <PageHeader eyebrow="Administration" title={`Bonjour, ${firstName(me.fullName)}`} />
       <p className="p-lead">Bienvenue dans l’espace d’administration Darling.</p>
       {me.permissions.includes('orders.read') ? <OrderStatsPanel /> : null}
+      {me.permissions.includes('commissions.manage') ? <CommissionsPanel /> : null}
       <Notice tone="info">
         D’autres statistiques arriveront avec les prochaines étapes.
         <ul className="p-list">
           <li>Produits et stock</li>
-          <li>Finance et commissions</li>
+          <li>Finance</li>
         </ul>
       </Notice>
       <nav aria-label="Accès rapides">
@@ -94,6 +99,31 @@ async function OrderStatsPanel() {
             <span className="p-stat__value">{stats.byStatus[s]}</span>
           </Link>
         ))}
+      </div>
+    </section>
+  );
+}
+
+/** What is payable now (validated, not held) and what is still pending, read straight from the database (commissions.manage only). */
+async function CommissionsPanel() {
+  await connection(); // request-time: amounts change with every delivery and payout
+  const totals = dashboardTotals(getServerContext().db);
+  return (
+    <section className="p-stack" aria-labelledby="d-commissions">
+      <h2 className="p-section-title" id="d-commissions">
+        Commissions
+      </h2>
+      <div className="p-stats">
+        <Link href="/admin/commissions?status=validated" className="p-stat glass p-stat--accent">
+          <span className="p-stat__label">Commissions à payer</span>
+          <span className="p-stat__value">{formatMoney(totals.toPay)}</span>
+          <span className="p-lead">Validées, prêtes à être payées</span>
+        </Link>
+        <Link href="/admin/commissions?status=pending" className="p-stat glass">
+          <span className="p-stat__label">Commissions en attente</span>
+          <span className="p-stat__value">{formatMoney(totals.pending)}</span>
+          <span className="p-lead">Commandes pas encore livrées ou retenues</span>
+        </Link>
       </div>
     </section>
   );

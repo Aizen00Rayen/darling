@@ -396,3 +396,12 @@ export function meTeam(db: Db, managerId: string): MeTeam {
     payouts: ownPayouts(db, managerId).payouts,
   };
 }
+
+/** Everyone who has ever been owed a commission (for the beneficiary filter), by name. */
+export function listBeneficiaries(db: Db): { userId: string; name: string; role: string }[] {
+  return db
+    .all<{ id: string; full_name: string; role: string }>(
+      'SELECT DISTINCT u.id, u.full_name, u.role FROM commissions c JOIN users u ON u.id = c.beneficiary_user_id ORDER BY u.full_name COLLATE NOCASE, u.id',
+    )
+    .map((r) => ({ userId: r.id, name: r.full_name, role: r.role }));
+}

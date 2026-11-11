@@ -121,6 +121,8 @@ async function Content({ searchParams }: PageProps<'/admin/journal'>) {
               <option value="user" />
               <option value="setting" />
               <option value="order" />
+              <option value="commission" />
+              <option value="payout" />
             </datalist>
           </div>
         ) : (
