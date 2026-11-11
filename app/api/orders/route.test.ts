@@ -20,6 +20,7 @@ const valid = {
 };
 
 // Like every route, the handler is wrapped by withAccess (public): same-origin requests carry the CSRF headers.
+// The full intake behaviour (storing, idempotency, honeypot, limits) is in server/orders/api.test.ts.
 const post = (body: unknown, raw = false, headers: Record<string, string> = {}) =>
   POST(
     new Request('http://localhost:3000/api/orders', {
@@ -32,7 +33,7 @@ const post = (body: unknown, raw = false, headers: Record<string, string> = {}) 
 
 describe('POST /api/orders', () => {
   it('is public but protected against cross-site requests', async () => {
-    expect(access).toEqual({ kind: 'public' });
+    expect(access.POST).toEqual({ kind: 'public' });
     const res = await post(valid, false, { origin: 'https://evil.example' });
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ code: 'csrf' });
@@ -43,7 +44,7 @@ describe('POST /api/orders', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       ok: true,
-      order: { ...valid, unitPrice: 3000, deliveryFee: 300, total: 6300 },
+      order: { ...valid, unitPrice: 3000, deliveryFee: 300, total: 6300, number: 'DL-23-000001' },
     });
   });
 

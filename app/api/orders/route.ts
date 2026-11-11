@@ -1,38 +1,67 @@
-import { getProduct } from '@/data/products';
 import { parseOrder } from '@/lib/order-schema';
-import { deliveryFee, orderTotal } from '@/lib/pricing';
-import { withAccess } from '@/server/security/access';
+import { respond } from '@/server/admin/errors';
+import { parseQuery } from '@/server/admin/query';
+import { resolveAttribution } from '@/server/orders/attribution';
+import { createOrder, findByIdempotencyKey } from '@/server/orders/create';
+import { fakeSuccess, honeypotFilled, readJson, successFromOrder, yearOf } from '@/server/orders/intake';
+import { listOrders } from '@/server/orders/list';
+import { IDEMPOTENCY_KEY, orderListQuery } from '@/server/orders/schemas';
+import { json, withAccess } from '@/server/security/access';
+import { LIMITS, rateLimited } from '@/server/security/rate-limit';
 
-// Public (the storefront form), but like every route it goes through withAccess: CSRF headers are required.
-export const access = { kind: 'public' } as const;
+// Two audiences on one path: the storefront form POSTs an order (public, rate-limited, honeypot, idempotent) and
+// staff with `orders.read` GET the list. Per-method access; each handler uses its own rule.
+export const access = {
+  POST: { kind: 'public' },
+  GET: { kind: 'permission', permission: 'orders.read' },
+} as const;
+
+export const GET = withAccess(access.GET, ({ request, ctx }) =>
+  respond(() => {
+    const query = parseQuery(request, orderListQuery);
+    if (!query.ok) return query.response;
+    return json(200, listOrders(ctx.db, query.data));
+  }),
+);
 
 /**
- * Order intake stub. Validates the order and recomputes every amount on the
- * server; nothing is stored or sent. The backend replaces the marked section.
+ * Storefront intake. Order of business: body -> honeypot (a filled `website` field gets a fake success and NOTHING is
+ * stored or counted) -> Idempotency-Key shape -> validation (`parseOrder`; client prices are never read) -> per-IP
+ * budget -> replay of an already-seen key -> per-phone budget -> one transaction that prices, numbers and stores.
+ * Customer names and phone numbers are never logged.
  */
-export const POST = withAccess(access, async ({ request }): Promise<Response> => {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ ok: false, errors: {} }, { status: 400 });
-  }
+export const POST = withAccess(access.POST, ({ request, ctx, ip }) =>
+  respond(async () => {
+    const read = await readJson(request);
+    if (!read.ok) return json(read.status, read.status === 413 ? { ok: false, code: 'payload_too_large', errors: {} } : { ok: false, errors: {} });
 
-  const parsed = parseOrder(body);
-  if (!parsed.ok) {
-    return Response.json({ ok: false, errors: parsed.errors }, { status: 400 });
-  }
+    const parsed = parseOrder(read.data);
 
-  const { order } = parsed;
-  const unitPrice = getProduct(order.productSlug)!.price;
-  const pricing = { price: unitPrice, quantity: order.quantity, wilayaCode: order.wilayaCode, mode: order.mode };
-  const fee = deliveryFee(order.wilayaCode, order.mode);
-  const total = orderTotal(pricing);
-  if (fee === null || total === null) {
-    return Response.json({ ok: false, errors: { mode: 'Livraison indisponible.' } }, { status: 400 });
-  }
+    if (honeypotFilled(read.data)) return json(200, fakeSuccess(parsed.ok ? parsed.order : null, yearOf(ctx.clock.now())));
 
-  // Backend hook: persist the order and attribute it to an affiliate here.
+    const key = request.headers.get('idempotency-key');
+    if (key !== null && !IDEMPOTENCY_KEY.test(key)) return json(400, { ok: false, code: 'invalid_idempotency_key', errors: {} });
 
-  return Response.json({ ok: true, order: { ...order, unitPrice, deliveryFee: fee, total } });
-});
+    if (!parsed.ok) return json(400, { ok: false, errors: parsed.errors });
+    const { order } = parsed;
+
+    const ipLimited = rateLimited(ctx, LIMITS.orderIp, ip);
+    if (ipLimited) return ipLimited;
+
+    // A retry of an order that went through (double click, flaky network) gets that order back and costs nothing.
+    if (key !== null) {
+      const existing = findByIdempotencyKey(ctx.db, key);
+      if (existing && existing.phone === order.phone) return json(200, successFromOrder(order, existing));
+    }
+
+    const phoneLimited = rateLimited(ctx, LIMITS.orderPhone, order.phone);
+    if (phoneLimited) return phoneLimited;
+
+    const attribution = resolveAttribution(request);
+    const { order: stored } = createOrder(ctx, order, {
+      source: attribution?.source ?? 'website',
+      ...(key === null ? {} : { idempotencyKey: key }),
+    });
+    return json(200, successFromOrder(order, stored));
+  }),
+);

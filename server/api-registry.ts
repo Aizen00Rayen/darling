@@ -14,6 +14,9 @@ import * as passwordReset from '@/app/api/auth/password/reset/route';
 import * as inviteLookup from '@/app/api/auth/invite/[token]/route';
 import * as inviteAccept from '@/app/api/auth/invite/accept/route';
 import * as orders from '@/app/api/orders/route';
+import * as orderById from '@/app/api/orders/[id]/route';
+import * as orderStatus from '@/app/api/orders/[id]/status/route';
+import * as orderManual from '@/app/api/orders/manual/route';
 import * as auditLog from '@/app/api/audit-log/route';
 import * as loginEvents from '@/app/api/login-events/route';
 import * as settings from '@/app/api/settings/route';
@@ -36,14 +39,23 @@ const METHODS: readonly Method[] = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELE
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyHandler = RouteHandler<any>;
 
+/** One rule for every method of the route, or one rule per method (`/api/orders`: public POST, permissioned GET). */
+export type RouteAccess = Access | Partial<Record<Method, Access>>;
+
 export interface RegisteredRoute {
   /** `/api/auth/invite/:token` style: `:name` segments are route params. */
   pattern: string;
   methods: Partial<Record<Method, AnyHandler>>;
-  access: Access;
+  access: RouteAccess;
 }
 
-function route(pattern: string, mod: { access: Access } & Partial<Record<Method, unknown>>): RegisteredRoute {
+/** The access rule that guards `method` of a registered route (undefined for a method the route has no rule for). */
+export function accessFor(entry: RegisteredRoute, method: Method): Access | undefined {
+  const rule = entry.access;
+  return 'kind' in rule ? rule : rule[method];
+}
+
+function route(pattern: string, mod: { access: RouteAccess } & Partial<Record<Method, unknown>>): RegisteredRoute {
   const methods: Partial<Record<Method, AnyHandler>> = {};
   for (const m of METHODS) {
     const handler = mod[m];
@@ -55,6 +67,9 @@ function route(pattern: string, mod: { access: Access } & Partial<Record<Method,
 export const ROUTES: readonly RegisteredRoute[] = [
   route('/api/health', health),
   route('/api/orders', orders),
+  route('/api/orders/manual', orderManual),
+  route('/api/orders/:id', orderById),
+  route('/api/orders/:id/status', orderStatus),
   route('/api/audit-log', auditLog),
   route('/api/login-events', loginEvents),
   route('/api/settings', settings),

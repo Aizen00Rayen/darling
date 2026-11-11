@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ROUTES, callApi, dispatchApi, matchRoute } from './api-registry';
+import { ROUTES, accessFor, callApi, dispatchApi, matchRoute, type Method } from './api-registry';
 import { createTestApp, login, seedUser, type TestApp } from './test/app';
 
 let app: TestApp;
@@ -39,9 +39,26 @@ describe('registry', () => {
     expect(new Set(patterns).size).toBe(patterns.length);
     for (const r of ROUTES) {
       expect(r.pattern.startsWith('/api/')).toBe(true);
-      expect(r.access.kind).toMatch(/^(public|authenticated|role|permission|owner)$/);
-      expect(Object.keys(r.methods).length).toBeGreaterThan(0);
+      const methods = Object.keys(r.methods) as Method[];
+      expect(methods.length).toBeGreaterThan(0);
+      // every registered method has a rule (its own, or the route's single one)
+      for (const m of methods) expect(accessFor(r, m)?.kind, `${m} ${r.pattern}`).toMatch(/^(public|authenticated|role|permission|owner)$/);
+      // per-method rules cover exactly the registered methods
+      if (!('kind' in r.access)) expect(Object.keys(r.access).sort()).toEqual([...methods].sort());
     }
+  });
+
+  it('knows that /api/orders has a public POST and a permissioned GET', () => {
+    const entry = ROUTES.find((r) => r.pattern === '/api/orders')!;
+    expect(accessFor(entry, 'POST')).toEqual({ kind: 'public' });
+    expect(accessFor(entry, 'GET')).toEqual({ kind: 'permission', permission: 'orders.read' });
+    expect(accessFor(entry, 'DELETE')).toBeUndefined();
+  });
+
+  it('resolves the order routes, the static manual path winning over :id', () => {
+    expect(matchRoute('/api/orders/manual')?.route.pattern).toBe('/api/orders/manual');
+    expect(matchRoute('/api/orders/018f0000-0000-7000-8000-000000000000')?.route.pattern).toBe('/api/orders/:id');
+    expect(matchRoute('/api/orders/018f0000-0000-7000-8000-000000000000/status')?.params).toEqual({ id: '018f0000-0000-7000-8000-000000000000' });
   });
 });
 

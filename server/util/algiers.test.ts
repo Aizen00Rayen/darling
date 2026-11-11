@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { algiersDayBounds } from './algiers';
+import { algiersDateString, algiersDayBounds, algiersYear2 } from './algiers';
 
 const iso = (ms: number | undefined) => (ms === undefined ? undefined : new Date(ms).toISOString());
 
@@ -52,5 +52,31 @@ describe('algiersDayBounds', () => {
     'tomorrow',
   ])('refuses %j', (value) => {
     expect(algiersDayBounds(value)).toBeNull();
+  });
+});
+
+describe('algiersDateString / algiersYear2', () => {
+  // 2026-12-31 23:00:00 UTC is already 2027-01-01 00:00 in Algiers (UTC+1).
+  const ROLLOVER = Date.UTC(2026, 11, 31, 23, 0, 0);
+
+  it('reads the Algiers calendar day, not the UTC one', () => {
+    expect(algiersDateString(ROLLOVER - 1)).toBe('2026-12-31');
+    expect(algiersDateString(ROLLOVER)).toBe('2027-01-01');
+    expect(algiersDateString(Date.UTC(2026, 10, 11, 22, 59, 59, 999))).toBe('2026-11-11');
+    expect(algiersDateString(Date.UTC(2026, 10, 11, 23, 0, 0))).toBe('2026-11-12');
+  });
+
+  it('gives the two-digit Algiers year', () => {
+    expect(algiersYear2(ROLLOVER - 1)).toBe('26');
+    expect(algiersYear2(ROLLOVER)).toBe('27');
+    expect(algiersYear2(Date.UTC(2100, 0, 1, 12))).toBe('00');
+  });
+
+  it('agrees with algiersDayBounds', () => {
+    const t = Date.UTC(2026, 1, 28, 23, 30); // 2026-03-01 00:30 in Algiers
+    const day = algiersDateString(t);
+    expect(day).toBe('2026-03-01');
+    const b = algiersDayBounds(day)!;
+    expect(t >= b.start && t < b.endExclusive).toBe(true);
   });
 });

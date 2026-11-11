@@ -9,10 +9,10 @@ const DATE_ERROR = 'Date invalide (format AAAA-MM-JJ).';
 const PAGE_ERROR = 'Numéro de page invalide.';
 
 /** A `YYYY-MM-DD` calendar day (Algiers) that really exists. */
-const dayParam = z.string().refine((value) => algiersDayBounds(value) !== null, DATE_ERROR);
+export const dayParam = z.string().refine((value) => algiersDayBounds(value) !== null, DATE_ERROR);
 
 /** Whole number from 1 to 10 000, digits only (so `1.5`, `-1`, `abc`, `1e3` and `` are refused). */
-const pageParam = z
+export const pageParam = z
   .string()
   .regex(/^\d{1,5}$/, PAGE_ERROR)
   .transform(Number)
@@ -21,7 +21,7 @@ const pageParam = z
 
 const windowShape = { from: dayParam.optional(), to: dayParam.optional(), page: pageParam };
 
-function windowRules(value: { from?: string | undefined; to?: string | undefined }, ctx: z.RefinementCtx) {
+export function windowRules(value: { from?: string | undefined; to?: string | undefined }, ctx: z.RefinementCtx) {
   // ISO dates compare correctly as text; both are known to be real dates at this point.
   if (value.from !== undefined && value.to !== undefined && value.from > value.to) {
     ctx.addIssue({ code: 'custom', path: ['to'], message: 'La date de fin précède la date de début.' });

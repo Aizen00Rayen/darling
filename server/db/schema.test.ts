@@ -29,11 +29,11 @@ function user(over: Record<string, unknown> = {}) {
 }
 
 describe('0001_identity schema', () => {
-  it('creates the identity tables', () => {
+  it('creates the identity and order tables', () => {
     const names = db
       .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
       .map((r) => r.name);
-    expect(names).toEqual(['_migrations', 'audit_log', 'auth_tokens', 'login_events', 'sessions', 'settings', 'user_permissions', 'users']);
+    expect(names).toEqual(['_migrations', 'audit_log', 'auth_tokens', 'login_events', 'order_status_history', 'orders', 'sessions', 'settings', 'user_permissions', 'users']);
   });
 
   describe('users', () => {

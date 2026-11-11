@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Permission } from '@/shared';
-import { ROUTES } from '../api-registry';
+import { ROUTES, accessFor, type Method } from '../api-registry';
+import { accessProblems, exportedMethods } from './route-scan';
 import { createTestApp, login, seedUser, totpCodeAt, type TestApp } from '../test/app';
 
 // The authorization matrix. Every app/api/**/route.ts must (1) export `access` and build its handlers with
@@ -43,8 +44,11 @@ const UNKNOWN_ID = '018f0000-0000-7000-8000-000000000000';
 const USERS = { permission: 'users.manage' as const, verdicts: PERMISSION_ROUTE };
 const AUDIT = { permission: 'audit.read' as const, verdicts: PERMISSION_ROUTE };
 const SETTINGS = { permission: 'settings.manage' as const, verdicts: PERMISSION_ROUTE };
+const ORDERS_READ = { permission: 'orders.read' as const, verdicts: PERMISSION_ROUTE };
+const ORDERS_WRITE = { permission: 'orders.write' as const, verdicts: PERMISSION_ROUTE };
 const MATRIX: Row[] = [
   { route: '/api/health', method: 'GET', verdicts: ALL_OK, allowed: [200] },
+  // /api/orders has per-method access: the storefront POST is public, the staff list needs orders.read.
   { route: '/api/orders', method: 'POST', body: {}, verdicts: ALL_OK, allowed: [400] },
   { route: '/api/auth/login', method: 'POST', body: {}, verdicts: ALL_OK, allowed: [400] },
   { route: '/api/auth/password/forgot', method: 'POST', body: {}, verdicts: ALL_OK, allowed: [400] },
@@ -71,6 +75,12 @@ const MATRIX: Row[] = [
   // audit.read
   { route: '/api/audit-log', method: 'GET', ...AUDIT, allowed: [200] },
   { route: '/api/login-events', method: 'GET', ...AUDIT, allowed: [200] },
+  // orders.read / orders.write (a super manager holding only the OTHER one is refused: reading never lets you write)
+  { route: '/api/orders', method: 'GET', ...ORDERS_READ, allowed: [200] },
+  { route: '/api/orders/:id', method: 'GET', path: `/api/orders/${UNKNOWN_ID}`, ...ORDERS_READ, allowed: [404] },
+  { route: '/api/orders/:id', method: 'PATCH', path: `/api/orders/${UNKNOWN_ID}`, body: {}, ...ORDERS_WRITE, allowed: [400] },
+  { route: '/api/orders/:id/status', method: 'POST', path: `/api/orders/${UNKNOWN_ID}/status`, body: {}, ...ORDERS_WRITE, allowed: [400] },
+  { route: '/api/orders/manual', method: 'POST', body: {}, ...ORDERS_WRITE, allowed: [400] },
   // settings.manage
   { route: '/api/settings', method: 'GET', ...SETTINGS, allowed: [200] },
   { route: '/api/settings/:key', method: 'PATCH', path: '/api/settings/company.name', body: {}, ...SETTINGS, allowed: [400] },
@@ -91,11 +101,6 @@ function patternOf(file: string): string {
   return '/' + rel.map((s) => s.replace(/^\[(.+)\]$/, ':$1')).join('/');
 }
 
-const METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
-function exportedMethods(source: string): string[] {
-  return METHODS.filter((m) => new RegExp(`export\\s+(?:const|async\\s+function|function)\\s+${m}\\b`).test(source));
-}
-
 describe('route files', () => {
   const files = routeFiles(API_DIR);
 
@@ -104,14 +109,8 @@ describe('route files', () => {
   });
 
   it.each(files.map((f) => [patternOf(f), f]))('%s exports `access` and wraps every handler in withAccess', (_pattern, file) => {
-    const source = fs.readFileSync(file as string, 'utf8');
-    expect(source).toMatch(/export\s+const\s+access\b/);
-    const methods = exportedMethods(source);
-    expect(methods.length).toBeGreaterThan(0);
-    for (const m of methods) {
-      expect(source, `${m} must be built with withAccess(access, ...)`).toMatch(new RegExp(`export\\s+const\\s+${m}\\s*=\\s*withAccess(?:<[^>]*>)?\\(\\s*access\\b`));
-      expect(source, `${m} must not be a bare function`).not.toMatch(new RegExp(`export\\s+(?:async\\s+)?function\\s+${m}\\b`));
-    }
+    // one rule for the route (`withAccess(access, ...)`) or one per method (`withAccess(access.POST, ...)`)
+    expect(accessProblems(fs.readFileSync(file as string, 'utf8'))).toEqual([]);
   });
 
   it.each(files.map((f) => [patternOf(f), f]))('%s is in the registry and in the matrix, for every exported method', (pattern, file) => {
@@ -120,6 +119,7 @@ describe('route files', () => {
     expect(entry, `registry is missing ${pattern}`).toBeDefined();
     expect(Object.keys(entry?.methods ?? {}).sort()).toEqual([...methods].sort());
     for (const m of methods) {
+      expect(accessFor(entry!, m as Method), `registry has no access rule for ${m} ${pattern}`).toBeDefined();
       expect(MATRIX.find((r) => r.route === pattern && r.method === m), `matrix is missing ${m} ${pattern}`).toBeDefined();
     }
   });
@@ -130,6 +130,15 @@ describe('route files', () => {
     for (const row of MATRIX) expect(patterns.has(row.route), row.route).toBe(true);
   });
 
+  it('every matrix row names the permission its method is actually registered with (per method for split routes)', () => {
+    for (const row of MATRIX) {
+      const entry = ROUTES.find((r) => r.pattern === row.route)!;
+      const rule = accessFor(entry, row.method as Method);
+      if (row.permission) expect(rule, `${row.method} ${row.route}`).toEqual({ kind: 'permission', permission: row.permission });
+      else expect(rule?.kind, `${row.method} ${row.route}`).not.toBe('permission');
+    }
+  });
+
   it('every matrix row lists a verdict for every principal and a body for every non-GET row that has one to validate', () => {
     for (const row of MATRIX) expect(row.verdicts, row.route).toHaveLength(PRINCIPALS.length);
   });
@@ -137,7 +146,7 @@ describe('route files', () => {
 
 describe('access matrix', () => {
   let app: TestApp;
-  const OTHER_PERMISSIONS: Permission[] = ['users.manage', 'audit.read', 'settings.manage', 'orders.read'];
+  const OTHER_PERMISSIONS: Permission[] = ['users.manage', 'audit.read', 'settings.manage', 'orders.read', 'orders.write'];
 
   async function freshCookie(p: Principal, permission?: Permission): Promise<string | undefined> {
     if (p === 'anonymous') return undefined;

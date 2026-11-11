@@ -24,3 +24,15 @@ export function algiersDayBounds(text: string): { start: number; endExclusive: n
   const start = midnightUtc.getTime() - ALGIERS_OFFSET_MS;
   return { start, endExclusive: start + DAY_MS };
 }
+
+/** The Algiers calendar day (`YYYY-MM-DD`) an instant falls in. Algiers has no daylight saving: a fixed UTC+1 shift. */
+export function algiersDateString(ms: number): string {
+  const d = new Date(ms + ALGIERS_OFFSET_MS);
+  const pad = (n: number, width: number) => String(n).padStart(width, '0');
+  return `${pad(d.getUTCFullYear(), 4)}-${pad(d.getUTCMonth() + 1, 2)}-${pad(d.getUTCDate(), 2)}`;
+}
+
+/** The last two digits of the Algiers calendar year (what order numbers carry). */
+export function algiersYear2(ms: number): string {
+  return String(new Date(ms + ALGIERS_OFFSET_MS).getUTCFullYear() % 100).padStart(2, '0');
+}

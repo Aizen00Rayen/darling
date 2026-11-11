@@ -84,6 +84,10 @@ export const LIMITS = {
   forgot: { bucket: 'auth.forgot', max: 5, windowMs: 15 * 60_000, scaleUnknown: true },
   /** First-run setup attempts: 5 per 15 minutes per client address (every attempt counts, right token or not). */
   setup: { bucket: 'setup', max: 5, windowMs: 15 * 60_000, scaleUnknown: true },
+  /** Storefront orders: 30 an hour per client address (the shared "unknown" bucket gets 4x). */
+  orderIp: { bucket: 'orders.ip', max: 30, windowMs: 3_600_000, scaleUnknown: true },
+  /** Storefront orders: at most 3 an hour per customer phone number (normalised), whatever the address. */
+  orderPhone: { bucket: 'orders.phone', max: 3, windowMs: 3_600_000 },
   /** 2FA enable, 2FA disable and password change: 5 a minute per authenticated USER, together. */
   passwordVerify: { bucket: 'auth.password-verify', max: 5, windowMs: 60_000 },
 } as const;
