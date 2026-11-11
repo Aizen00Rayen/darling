@@ -45,7 +45,7 @@ describe('apiServer (in-process)', () => {
   it('maps errors like the browser helper: status, code and field errors', async () => {
     const unauth = await apiServer('/api/auth/me');
     expect(unauth).toEqual({ ok: false, status: 401, code: 'unauthenticated' });
-    const missing = await apiServer('/api/users');
+    const missing = await apiServer('/api/not-a-route');
     expect(missing).toEqual({ ok: false, status: 404, code: 'not_found' });
     const bad = await apiServer('/api/auth/login', { method: 'POST', body: { email: 'x', password: '' } });
     expect(bad).toMatchObject({ ok: false, status: 400, code: 'validation', errors: expect.any(Object) });

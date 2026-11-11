@@ -97,9 +97,11 @@ describe('callApi', () => {
     }
   });
 
-  it('answers 404 for routes that do not exist yet (M3 pages)', async () => {
+  it('answers 404 for routes that do not exist, and runs the registered users route (401 without a session)', async () => {
+    expect((await callApi('/api/not-a-route?page=1', {}, { cookieHeader: '' })).status).toBe(404);
     const res = await callApi('/api/users?page=1', {}, { cookieHeader: '' });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ code: 'unauthenticated' });
   });
 });
 

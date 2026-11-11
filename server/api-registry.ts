@@ -14,6 +14,16 @@ import * as passwordReset from '@/app/api/auth/password/reset/route';
 import * as inviteLookup from '@/app/api/auth/invite/[token]/route';
 import * as inviteAccept from '@/app/api/auth/invite/accept/route';
 import * as orders from '@/app/api/orders/route';
+import * as auditLog from '@/app/api/audit-log/route';
+import * as loginEvents from '@/app/api/login-events/route';
+import * as settings from '@/app/api/settings/route';
+import * as settingByKey from '@/app/api/settings/[key]/route';
+import * as users from '@/app/api/users/route';
+import * as userById from '@/app/api/users/[id]/route';
+import * as userSuspend from '@/app/api/users/[id]/suspend/route';
+import * as userReactivate from '@/app/api/users/[id]/reactivate/route';
+import * as userResend from '@/app/api/users/[id]/resend-invite/route';
+import * as userRevoke from '@/app/api/users/[id]/revoke-sessions/route';
 
 // Static table of EVERY route handler in app/api/**/route.ts. It lets server components call the API in-process
 // (callApi) with exactly the same pipeline as an HTTP request, and lets tests dispatch without a server.
@@ -44,6 +54,16 @@ function route(pattern: string, mod: { access: Access } & Partial<Record<Method,
 export const ROUTES: readonly RegisteredRoute[] = [
   route('/api/health', health),
   route('/api/orders', orders),
+  route('/api/audit-log', auditLog),
+  route('/api/login-events', loginEvents),
+  route('/api/settings', settings),
+  route('/api/settings/:key', settingByKey),
+  route('/api/users', users),
+  route('/api/users/:id', userById),
+  route('/api/users/:id/suspend', userSuspend),
+  route('/api/users/:id/reactivate', userReactivate),
+  route('/api/users/:id/resend-invite', userResend),
+  route('/api/users/:id/revoke-sessions', userRevoke),
   route('/api/auth/login', login),
   route('/api/auth/logout', logout),
   route('/api/auth/me', me),

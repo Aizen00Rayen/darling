@@ -56,7 +56,8 @@ async function Content({ params, searchParams }: PageProps<'/admin/utilisateurs/
     );
   }
   const user = parsed.data;
-  const canEdit = user.role !== 'super_manager' || me.isOwner;
+  // Only owners edit Super Managers, but everyone may edit their own name and phone.
+  const canEdit = user.role !== 'super_manager' || me.isOwner || user.id === me.id;
   const created = firstParam(sp.created) === '1';
 
   return (
@@ -125,7 +126,7 @@ async function Content({ params, searchParams }: PageProps<'/admin/utilisateurs/
           <h2 className="p-card__title" id="d-edit">
             Modifier
           </h2>
-          <UserForm mode="edit" meIsOwner={me.isOwner} user={user} />
+          <UserForm mode="edit" meIsOwner={me.isOwner} meId={me.id} user={user} />
         </section>
       ) : null}
     </div>

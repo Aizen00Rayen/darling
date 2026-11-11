@@ -28,7 +28,7 @@ export function validationFailed(errors: Record<string, string>): Response {
   return json(400, { code: 'validation', errors });
 }
 
-function fieldErrors(error: z.ZodError): Record<string, string> {
+export function fieldErrors(error: z.ZodError): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const issue of error.issues) {
     const field = issue.path.map(String).join('.') || '_';
@@ -42,7 +42,11 @@ function fieldErrors(error: z.ZodError): Record<string, string> {
  * refused callers must never see validation details. Malformed JSON is 400 `bad_request`, an oversized body
  * 413 `payload_too_large`; schema failures are 400 `validation` with one message per field (never the value).
  */
-export async function parseBody<S extends z.ZodType>(request: Request, schema: S): Promise<ParsedBody<z.infer<S>>> {
+export async function parseBody<S extends z.ZodType>(
+  request: Request,
+  schema: S,
+  options: { allowEmpty?: boolean } = {},
+): Promise<ParsedBody<z.infer<S>>> {
   const declared = Number(request.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
     return { ok: false, response: json(413, { code: 'payload_too_large' }) };
@@ -57,10 +61,14 @@ export async function parseBody<S extends z.ZodType>(request: Request, schema: S
     return { ok: false, response: json(413, { code: 'payload_too_large' }) };
   }
   let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    return { ok: false, response: json(400, { code: 'bad_request' }) };
+  if (options.allowEmpty && text.trim() === '') {
+    raw = undefined; // a body-less request is judged by the schema as "no body"
+  } else {
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return { ok: false, response: json(400, { code: 'bad_request' }) };
+    }
   }
   const parsed = schema.safeParse(raw);
   if (!parsed.success) return { ok: false, response: validationFailed(fieldErrors(parsed.error)) };
