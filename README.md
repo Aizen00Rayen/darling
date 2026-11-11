@@ -38,6 +38,10 @@ Pick one (both end with an owner who logs in and is sent to enrol 2FA; neither p
   `users` table is empty and `SETUP_TOKEN` is set (anything else: 404 / redirect to `/connexion`); 5 attempts per 15 minutes per
   address. Remove `SETUP_TOKEN` afterwards: once a user exists it does nothing, but a secret you do not need should not stay.
 
+Lost or expired invitation (owner still `invited`): re-run the same command with the same email: it re-issues the
+invitation (older links stop working) and prints the new link. If the `users` table is still empty, the `/configuration`
+page works too. An email that belongs to anyone else, or to an active owner, is refused.
+
 ## Layout
 
 | Path | What |

@@ -52,6 +52,18 @@ describe('create-owner CLI', () => {
     expect(app.db.all('SELECT 1 FROM users')).toHaveLength(2);
   });
 
+  it('re-run with the same email while the owner is still invited: prints a NEW link, mails it, exit 0', async () => {
+    const a = await run(['--email', 'boss@example.test', '--name', 'The Boss']);
+    const b = await run(['--email', 'boss@example.test', '--name', 'The Boss']);
+    expect(b.code).toBe(0);
+    const link = (t: string) => /token=([A-Za-z0-9_-]{43})/.exec(t)?.[1];
+    expect(link(b.out)).toBeTruthy();
+    expect(link(b.out)).not.toBe(link(a.out));
+    expect(b.out).toContain('re-issued');
+    expect(b.mailer.sent).toHaveLength(1);
+    expect(app.db.all('SELECT 1 FROM users')).toHaveLength(1);
+  });
+
   it('refuses an existing email, even with --force, without echoing the address', async () => {
     await seedUser(app, { role: 'affiliate', email: 'taken@example.test' });
     const r = await run(['--email', 'taken@example.test', '--name', 'The Boss', '--force']);

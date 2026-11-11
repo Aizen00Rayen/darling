@@ -12,24 +12,24 @@ type Values = { 'security.require_2fa_super_managers': boolean; 'company.name': 
 
 const KEYS = Object.keys(SETTINGS) as SettingKey[];
 
-export function SettingsForm({ initial }: { initial: Values }) {
+export function SettingsForm({ initial, isOwner = false }: { initial: Values; isOwner?: boolean }) {
   return (
     <div className="p-stack">
       {KEYS.map((key) => (
-        <SettingCard key={key} settingKey={key} initial={initial[key]} />
+        <SettingCard key={key} settingKey={key} initial={initial[key]} locked={key.startsWith('security.') && !isOwner} />
       ))}
     </div>
   );
 }
 
-function SettingCard({ settingKey, initial }: { settingKey: SettingKey; initial: boolean | string }) {
+function SettingCard({ settingKey, initial, locked }: { settingKey: SettingKey; initial: boolean | string; locked: boolean }) {
   const router = useRouter();
   const [value, setValue] = useState<boolean | string>(initial);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
   async function save() {
-    if (busy) return;
+    if (busy || locked) return;
     setBusy(true);
     setMessage(null);
     const result = await api(`/api/settings/${settingKey}`, { method: 'PATCH', body: { value } });
@@ -57,6 +57,7 @@ function SettingCard({ settingKey, initial }: { settingKey: SettingKey; initial:
               type="checkbox"
               role="switch"
               checked={value === true}
+              disabled={locked}
               onChange={(e) => setValue(e.target.checked)}
               aria-label="Double authentification obligatoire pour les Super Managers"
             />
@@ -68,11 +69,14 @@ function SettingCard({ settingKey, initial }: { settingKey: SettingKey; initial:
           <input type="text" maxLength={100} value={String(value)} onChange={(e) => setValue(e.target.value)} />
         </Field>
       )}
+      {locked ? <p className="p-lead">Seul un propriétaire peut modifier ce réglage.</p> : null}
       <div aria-live="polite">{message ? <Notice tone={message.tone}>{message.text}</Notice> : null}</div>
       <div className="p-form__actions">
-        <Button busy={busy} onClick={save}>
-          Enregistrer
-        </Button>
+        {locked ? null : (
+          <Button busy={busy} onClick={save}>
+            Enregistrer
+          </Button>
+        )}
       </div>
     </section>
   );

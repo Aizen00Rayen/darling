@@ -103,12 +103,12 @@ const argsSchema = z.object({ email: emailSchema, fullName: z.string().trim().mi
 /**
  * Creates an `invited` owner (no password), an invitation token and the audit row (actor null) in one immediate
  * transaction. Refuses when any owner row exists, whatever its status, unless `force`, and when the e-mail
- * address is in use (never forced). Returns the link and the invitation mail so the caller can try to send it.
+ * address is in use (never forced), except that an INVITED owner who owns that address gets a fresh invitation. Returns the link and the invitation mail so the caller can try to send it.
  */
 export function createInvitedOwner(
   deps: { db: Db; clock: Clock; config: Pick<Config, 'appOrigin'> },
   args: { email: string; fullName: string; force: boolean },
-): { userId: string; link: string; mail: Mail } {
+): { userId: string; link: string; mail: Mail; reissued: boolean } {
   const parsed = argsSchema.safeParse({ email: args.email, fullName: args.fullName });
   if (!parsed.success) {
     const fields = [...new Set(parsed.error.issues.map((issue) => (issue.path[0] === 'fullName' ? 'name' : String(issue.path[0]))))];
@@ -117,11 +117,29 @@ export function createInvitedOwner(
   const { email, fullName } = parsed.data;
   try {
     return deps.db.transaction((tx) => {
+      const existing = tx.get<{ id: string; full_name: string; status: string; is_owner: number; role: string }>(
+        'SELECT id, full_name, status, is_owner, role FROM users WHERE email = ?',
+        email,
+      );
+      if (existing) {
+        // Recovery path: the owner never accepted the invitation (lost mail, expired link). Re-issue it; any older
+        // link stops working. Anyone else holding this address (an active owner included) is a refusal, never forced.
+        if (existing.is_owner !== 1 || existing.status !== 'invited' || existing.role !== 'super_manager') {
+          throw new CreateOwnerError('email_taken', 'An account with this e-mail address already exists.');
+        }
+        const now = deps.clock.now();
+        const token = issueToken(tx, deps.clock, { userId: existing.id, type: 'invite' });
+        recordAudit(tx, { actorUserId: null, action: 'user.invite_resent', entityType: 'user', entityId: existing.id, reason: CLI_AUDIT_REASON, at: now });
+        const link = linkFor(deps.config, '/invitation', token);
+        return {
+          userId: existing.id,
+          link,
+          reissued: true,
+          mail: { to: email, ...inviteMail({ fullName: existing.full_name, link, roleLabel: ROLE_LABELS.super_manager }) },
+        };
+      }
       if (!args.force && tx.get('SELECT 1 AS owner FROM users WHERE is_owner = 1 LIMIT 1')) {
         throw new CreateOwnerError('owner_exists', 'An owner account already exists. Pass --force to create another.');
-      }
-      if (tx.get('SELECT 1 AS taken FROM users WHERE email = ?', email)) {
-        throw new CreateOwnerError('email_taken', 'An account with this e-mail address already exists.');
       }
       const now = deps.clock.now();
       const id = newId(deps.clock);
@@ -141,7 +159,7 @@ export function createInvitedOwner(
       });
       const token = issueToken(tx, deps.clock, { userId: id, type: 'invite' });
       const link = linkFor(deps.config, '/invitation', token);
-      return { userId: id, link, mail: { to: email, ...inviteMail({ fullName, link, roleLabel: ROLE_LABELS.super_manager }) } };
+      return { userId: id, link, reissued: false, mail: { to: email, ...inviteMail({ fullName, link, roleLabel: ROLE_LABELS.super_manager }) } };
     }, 'immediate');
   } catch (err) {
     if (isUniqueViolation(err, 'users.email')) throw new CreateOwnerError('email_taken', 'An account with this e-mail address already exists.');

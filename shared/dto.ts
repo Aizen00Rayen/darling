@@ -82,9 +82,12 @@ export const createUserInput = z.object({
 });
 export type CreateUserInput = z.infer<typeof createUserInput>;
 
+/** On update a phone can also be cleared: null or an empty string. */
+const clearablePhoneSchema = z.union([z.null(), z.literal('').transform(() => null), phoneSchema]);
+
 export const updateUserInput = z.object({
   fullName: fullNameSchema.optional(),
-  phone: phoneSchema.optional(),
+  phone: clearablePhoneSchema.optional(),
   role: roleSchema.optional(),
   permissions: z.array(permissionSchema).optional(),
   isOwner: z.boolean().optional(),

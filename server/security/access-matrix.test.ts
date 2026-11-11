@@ -15,13 +15,15 @@ type Principal = 'anonymous' | 'affiliate' | 'sub_manager' | 'sm_none' | 'sm_per
 const PRINCIPALS: Principal[] = ['anonymous', 'affiliate', 'sub_manager', 'sm_none', 'sm_permitted', 'owner', 'sm_unenrolled'];
 
 /** 'ok' = anything but 401/403 (the handler ran); the others are exact refusals. */
-type Verdict = 'ok' | 'U' | 'F' | 'E';
+type Verdict = 'ok' | 'U' | 'F' | 'E' | 'O';
 const ALL_OK: Verdict[] = ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok'];
 // anonymous, affiliate, sub_manager, sm_none, sm_permitted, owner, sm_unenrolled
 const AUTHENTICATED_ENROLLMENT_OK: Verdict[] = ['U', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok'];
 // A permission route: only a super manager HOLDING the permission and the owner get in; a super manager who still
 // has to enrol in 2FA is told to enrol (before any permission is looked at); everyone else is refused.
 const PERMISSION_ROUTE: Verdict[] = ['U', 'F', 'F', 'F', 'ok', 'ok', 'E'];
+// An owner-only action behind a permission: the permitted non-owner passes the gate and is refused by the handler.
+const PERMISSION_OWNER_ONLY: Verdict[] = ['U', 'F', 'F', 'F', 'O', 'ok', 'E'];
 
 interface Row {
   route: string;
@@ -84,6 +86,8 @@ const MATRIX: Row[] = [
   // settings.manage
   { route: '/api/settings', method: 'GET', ...SETTINGS, allowed: [200] },
   { route: '/api/settings/:key', method: 'PATCH', path: '/api/settings/company.name', body: {}, ...SETTINGS, allowed: [400] },
+  // security.* keys: owner-only (403 owner_required for a super manager who merely holds settings.manage)
+  { route: '/api/settings/:key', method: 'PATCH', path: '/api/settings/security.require_2fa_super_managers', body: {}, ...SETTINGS, verdicts: PERMISSION_OWNER_ONLY, allowed: [400] },
 ];
 
 const API_DIR = path.join(process.cwd(), 'app', 'api');
@@ -188,7 +192,11 @@ describe('access matrix', () => {
         const body = row.method === 'GET' ? undefined : (row.body ?? undefined);
         const res = await app.call(row.path ?? row.route, { method: row.method, body, cookie });
         const text = await res.text();
-        if (verdict === 'ok') {
+        if (verdict === 'O') {
+          // permitted by the route's permission, refused by the handler's owner rule, before any validation
+          expect(res.status).toBe(403);
+          expect(JSON.parse(text)).toEqual({ code: 'owner_required' });
+        } else if (verdict === 'ok') {
           // authorised: the handler ran (never 401/403), and the status is one of the route's own
           expect(res.status, `${principal}: ${text}`).not.toBe(401);
           expect(res.status, `${principal}: ${text}`).not.toBe(403);

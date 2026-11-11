@@ -60,9 +60,9 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, io: MainIo = 
     const clock = io.deps?.clock ?? systemClock;
     const db = io.deps?.db ?? getDb();
     const mailer = io.deps?.mailer ?? buildMailer(config);
-    const { link, mail } = createInvitedOwner({ db, clock, config }, { email: values.email, fullName: values.name, force: values.force === true });
+    const { link, mail, reissued } = createInvitedOwner({ db, clock, config }, { email: values.email, fullName: values.name, force: values.force === true });
     const days = Math.round(INVITE_TTL_MS / 86_400_000);
-    io.stdout(`Owner account created. Invitation link (valid ${days} days):\n${link}\n`);
+    io.stdout(`${reissued ? 'Invitation re-issued (older links no longer work).' : 'Owner account created.'} Invitation link (valid ${days} days):\n${link}\n`);
     try {
       await mailer.send(mail);
     } catch {

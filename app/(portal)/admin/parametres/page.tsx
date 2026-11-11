@@ -34,9 +34,7 @@ async function Content() {
       ) : !parsed?.success ? (
         <Notice tone="error">{apiMessage('generic')}</Notice>
       ) : (
-        <SettingsForm
-          initial={{ ...SETTING_DEFAULTS, ...parsed.data }}
-        />
+        <SettingsForm initial={{ ...SETTING_DEFAULTS, ...parsed.data }} isOwner={me.isOwner} />
       )}
     </div>
   );

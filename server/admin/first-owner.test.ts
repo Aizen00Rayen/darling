@@ -209,6 +209,47 @@ describe('createInvitedOwner (the CLI core)', () => {
     expect(users()).toHaveLength(2);
   });
 
+  describe('an INVITED owner whose invitation was lost', () => {
+    it('re-issues the invitation (older links stop working), audits user.invite_resent with actor null, and keeps the account', async () => {
+      const first = createInvitedOwner(deps(), { email: 'boss@example.test', fullName: 'The Boss', force: false });
+      const again = createInvitedOwner(deps(), { email: 'BOSS@example.test', fullName: 'Other Name', force: false });
+      expect(again.userId).toBe(first.userId);
+      expect(again.link).not.toBe(first.link);
+      expect(users()).toHaveLength(1);
+      expect(users()[0]).toMatchObject({ full_name: 'The Boss', status: 'invited', is_owner: 1 });
+      const entries = audits();
+      expect(entries.map((a) => a.action)).toEqual(['user.created', 'user.invite_resent']);
+      expect(entries[1]).toMatchObject({ actor_user_id: null, entity_id: first.userId, reason: 'cli create-owner' });
+      expect(JSON.stringify(entries)).not.toContain(again.link.split('token=')[1]);
+      expect(again.mail.to).toBe('boss@example.test');
+
+      const old = await app.call('/api/auth/invite/accept', { body: { token: first.link.split('token=')[1], password: DEFAULT_PASSWORD } });
+      expect(old.status).toBe(400);
+      const fresh = await app.call('/api/auth/invite/accept', { body: { token: again.link.split('token=')[1], password: DEFAULT_PASSWORD } });
+      expect(fresh.status).toBe(204);
+    });
+
+    it('works even when other owners exist (no --force needed for the same invited owner)', async () => {
+      const first = createInvitedOwner(deps(), { email: 'boss@example.test', fullName: 'The Boss', force: false });
+      await seedUser(app, { role: 'super_manager', isOwner: true });
+      expect(createInvitedOwner(deps(), { email: 'boss@example.test', fullName: 'The Boss', force: false }).userId).toBe(first.userId);
+    });
+
+    it.each([
+      ['an active owner', { role: 'super_manager' as const, isOwner: true, status: 'active' as const }],
+      ['a suspended owner', { role: 'super_manager' as const, isOwner: true, status: 'suspended' as const }],
+      ['an invited non-owner super manager', { role: 'super_manager' as const, status: 'invited' as const }],
+      ['an invited affiliate', { role: 'affiliate' as const, status: 'invited' as const }],
+      ['an active affiliate', { role: 'affiliate' as const, status: 'active' as const }],
+    ])('still refuses an email that belongs to %s, with or without --force', async (_n, spec) => {
+      await seedUser(app, { ...spec, email: 'taken@example.test' });
+      for (const force of [false, true]) {
+        expect(() => createInvitedOwner(deps(), { email: 'taken@example.test', fullName: 'X Person', force })).toThrow(expect.objectContaining({ code: 'email_taken' }));
+      }
+      expect(audits()).toHaveLength(0);
+    });
+  });
+
   it('refuses an existing email, even with --force and in another case', async () => {
     await seedUser(app, { role: 'affiliate', email: 'taken@example.test' });
     for (const force of [false, true]) {

@@ -4,7 +4,7 @@ import type { Clock } from '../clock';
 import type { Db } from '../db/sqlite';
 import { recordAudit } from '../audit';
 import { getSetting } from '../settings';
-import { forbidden, notFound, validation } from './errors';
+import { forbidden, notFound, ownerRequired, validation } from './errors';
 
 export type SettingValues = { [K in SettingKey]: z.infer<(typeof SETTINGS)[K]> };
 
@@ -38,12 +38,14 @@ export interface SettingsActor {
  */
 export function updateSetting(deps: { db: Db; clock: Clock }, actor: SettingsActor, key: string, value: unknown): { key: SettingKey; value: unknown } {
   if (!isSettingKey(key)) throw notFound();
-  const parsed = SETTINGS[key].safeParse(value);
-  if (!parsed.success) throw validation({ value: parsed.error.issues[0]?.message ?? 'Valeur invalide.' });
-  const next = parsed.data;
+  let next: unknown;
 
   deps.db.transaction((tx) => {
-    assertMayManageSettings(tx, actor.userId);
+    // Authority first: a caller who may not change this key learns nothing about its value rules.
+    assertMayManageSettings(tx, actor.userId, key);
+    const parsed = SETTINGS[key].safeParse(value);
+    if (!parsed.success) throw validation({ value: parsed.error.issues[0]?.message ?? 'Valeur invalide.' });
+    next = parsed.data;
     const previous = getSetting(tx, key);
     const now = deps.clock.now();
     tx.run(
@@ -66,10 +68,14 @@ export function updateSetting(deps: { db: Db; clock: Clock }, actor: SettingsAct
   return { key, value: next };
 }
 
-function assertMayManageSettings(tx: Db, userId: string): void {
+/** Keys under `security.` change how everyone signs in: only an owner may change them. */
+const OWNER_ONLY_PREFIX = 'security.';
+
+function assertMayManageSettings(tx: Db, userId: string, key: string): void {
   const self = tx.get<{ status: string; role: string; is_owner: number }>('SELECT status, role, is_owner FROM users WHERE id = ?', userId);
   if (self?.status !== 'active' || self.role !== 'super_manager') throw forbidden();
   if (self.is_owner === 1) return; // an owner holds every permission
+  if (key.startsWith(OWNER_ONLY_PREFIX)) throw ownerRequired();
   if (!tx.get("SELECT 1 AS ok FROM user_permissions WHERE user_id = ? AND permission = 'settings.manage'", userId)) throw forbidden();
 }
 

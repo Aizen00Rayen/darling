@@ -35,13 +35,14 @@ export function UserForm({ mode, meIsOwner, meId, user }: Props) {
 
   // Super Managers may only be created/edited by owners (and everyone may edit themselves).
   const roleOptions: Role[] = ROLES.filter((r) => r !== 'super_manager' || meIsOwner || user?.role === 'super_manager');
-  // Editing yourself, or an owner, only ever changes name and phone: nobody changes their own role or permissions,
-  // an owner's role is fixed, and an owner holds every permission, so the 14 EFFECTIVE permissions shown for an
-  // owner must never be sent back as grants (that was a bug: the API now ignores them too).
-  const profileOnly = mode === 'edit' && (Boolean(user?.isOwner) || (user !== undefined && user.id === meId));
-  const roleLocked = profileOnly;
-  const showPermissions = role === 'super_manager' && !profileOnly;
-  const showOwner = role === 'super_manager' && meIsOwner;
+  // Editing yourself only ever changes name and phone: nobody changes their own role or permissions.
+  const profileOnly = mode === 'edit' && user !== undefined && user.id === meId;
+  // Another owner's record: name, phone and the owner flag. An owner holds every permission, so the 14 EFFECTIVE
+  // permissions shown for an owner are never sent back as grants (that was a bug: the API now ignores them too).
+  const ownerTarget = mode === 'edit' && Boolean(user?.isOwner) && !profileOnly;
+  const roleLocked = profileOnly || ownerTarget;
+  const showPermissions = role === 'super_manager' && !profileOnly && !ownerTarget;
+  const showOwner = role === 'super_manager' && meIsOwner && !profileOnly;
 
   function togglePermission(permission: Permission, checked: boolean) {
     setPermissions((current) => (checked ? [...new Set([...current, permission])] : current.filter((p) => p !== permission)));
@@ -64,13 +65,16 @@ export function UserForm({ mode, meIsOwner, meId, user }: Props) {
 
     const body: Record<string, unknown> = { fullName: fullName.trim() };
     if (phone.trim() !== '') body.phone = phone.trim();
-    if (!profileOnly) {
+    else if (mode === 'edit' && user?.phone) body.phone = null; // the field was emptied: clear the number
+    if (ownerTarget) {
+      if (isOwner !== user?.isOwner) body.isOwner = isOwner;
+    } else if (!profileOnly) {
       body.role = role;
       if (mode === 'create') body.email = email.trim();
       if (showPermissions) {
         // An owner's permissions are implicit: grants are sent only for someone who is not being made an owner.
         if (!isOwner) body.permissions = permissions;
-        if (showOwner) body.isOwner = isOwner;
+        if (showOwner && (mode === 'create' || isOwner !== user?.isOwner)) body.isOwner = isOwner;
       }
     }
 
@@ -163,12 +167,19 @@ export function UserForm({ mode, meIsOwner, meId, user }: Props) {
         </Field>
       </div>
 
-      {profileOnly && role === 'super_manager' ? (
+      {(profileOnly || ownerTarget) && role === 'super_manager' ? (
         <p className="p-lead">
           {user?.isOwner
             ? 'Un propriétaire dispose de toutes les permissions ; son rôle et ses permissions ne se modifient pas ici.'
             : 'Vous ne pouvez pas modifier votre propre rôle ni vos permissions.'}
         </p>
+      ) : null}
+
+      {ownerTarget && showOwner ? (
+        <label className="p-check">
+          <input type="checkbox" name="isOwner" checked={isOwner} onChange={(e) => setIsOwner(e.target.checked)} />
+          <span>Propriétaire (toutes les permissions)</span>
+        </label>
       ) : null}
 
       {showPermissions ? (

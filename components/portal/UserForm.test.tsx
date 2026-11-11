@@ -75,7 +75,7 @@ describe('UserForm (edit): what is sent', () => {
   it('a non-owner super manager target edited by an owner still sends its grants (and the role)', async () => {
     const sm = user({ role: 'super_manager', permissions: ['audit.read'] });
     const [, init] = await submitEdit(sm, { meIsOwner: true, meId: 'owner-id' });
-    expect(init.body).toEqual({ fullName: 'Renamed Person', role: 'super_manager', permissions: ['audit.read'], isOwner: false });
+    expect(init.body).toEqual({ fullName: 'Renamed Person', role: 'super_manager', permissions: ['audit.read'] }); // isOwner only when it changed
   });
 
   it('promoting a super manager to owner sends the flag and no grants', async () => {
@@ -88,6 +88,51 @@ describe('UserForm (edit): what is sent', () => {
     const body = (api.mock.calls[0] as [string, { body: Record<string, unknown> }])[1].body;
     expect(body.isOwner).toBe(true);
     expect('permissions' in body).toBe(false);
+  });
+
+  it('a co-owner target: the owner checkbox is available, no permission list, and isOwner is sent only when it changed', async () => {
+    const co = user({ role: 'super_manager', isOwner: true, permissions: [...PERMISSIONS] as Permission[] });
+    const u = userEvent.setup();
+    const { container } = render(<UserForm mode="edit" meIsOwner meId="other-owner" user={co} />);
+    expect(container.querySelectorAll('input[name="permissions"]')).toHaveLength(0);
+    const box = screen.getByLabelText('Propriétaire (toutes les permissions)') as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    await u.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect((api.mock.calls[0] as [string, { body: object }])[1].body).toEqual({ fullName: 'Someone Else' });
+    api.mockClear();
+    await u.click(box);
+    await u.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    const body = (api.mock.calls[0] as [string, { body: Record<string, unknown> }])[1].body;
+    expect(body).toEqual({ fullName: 'Someone Else', isOwner: false });
+    expect('permissions' in body).toBe(false);
+  });
+
+  it('an owner editing themselves has no owner checkbox', () => {
+    const me = user({ role: 'super_manager', isOwner: true, permissions: [...PERMISSIONS] as Permission[] });
+    render(<UserForm mode="edit" meIsOwner meId={me.id} user={me} />);
+    expect(screen.queryByLabelText('Propriétaire (toutes les permissions)')).toBeNull();
+  });
+
+  it('an affiliate target: name, phone and role only', async () => {
+    const aff = user({ role: 'affiliate' });
+    const [, init] = await submitEdit(aff, { meIsOwner: true, meId: 'owner-id' });
+    expect(init.body).toEqual({ fullName: 'Renamed Person', role: 'affiliate' });
+  });
+
+  it('clearing the phone field sends null; an untouched empty phone sends nothing', async () => {
+    const withPhone = user({ role: 'affiliate', phone: '0550123456' });
+    const u = userEvent.setup();
+    render(<UserForm mode="edit" meIsOwner meId="o" user={withPhone} />);
+    await u.clear(screen.getByLabelText(/Téléphone/));
+    await u.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect((api.mock.calls[0] as [string, { body: Record<string, unknown> }])[1].body.phone).toBeNull();
+    cleanup();
+    api.mockClear();
+    const [, init] = await submitEdit(user({ role: 'affiliate' }), { meIsOwner: true, meId: 'o' });
+    expect('phone' in init.body).toBe(false);
   });
 
   it('a sub manager target: name, phone and role, no permission fields', async () => {

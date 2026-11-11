@@ -311,13 +311,14 @@ export function updateUser(deps: UsersDeps, actor: Actor, id: string, input: Upd
     const grantsChanged = !sameList(finalGrants, grants);
 
     const fullName = input.fullName !== undefined && input.fullName !== target.full_name ? input.fullName : undefined;
-    const phone = input.phone !== undefined && input.phone !== target.phone ? input.phone : undefined;
-    if (fullName === undefined && phone === undefined && !roleChanged && !ownerChanged && !grantsChanged) return toDto(target, grants);
+    const phoneChanged = input.phone !== undefined && input.phone !== target.phone;
+    const phone = phoneChanged ? (input.phone ?? null) : null;
+    if (fullName === undefined && !phoneChanged && !roleChanged && !ownerChanged && !grantsChanged) return toDto(target, grants);
 
     tx.run(
-      `UPDATE users SET full_name = COALESCE(:name, full_name), phone = COALESCE(:phone, phone), role = :role, is_owner = :owner, updated_at = :now
+      `UPDATE users SET full_name = COALESCE(:name, full_name), phone = CASE WHEN :setPhone THEN :phone ELSE phone END, role = :role, is_owner = :owner, updated_at = :now
        WHERE id = :id`,
-      { name: fullName ?? null, phone: phone ?? null, role: newRole, owner: newOwner, now, id: target.id },
+      { name: fullName ?? null, setPhone: phoneChanged, phone, role: newRole, owner: newOwner, now, id: target.id },
     );
     if (grantsChanged) {
       tx.run('DELETE FROM user_permissions WHERE user_id = ?', target.id);

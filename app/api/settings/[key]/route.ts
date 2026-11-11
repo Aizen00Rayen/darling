@@ -6,7 +6,7 @@ import { json, parseBody, withAccess } from '@/server/security/access';
 export const access = { kind: 'permission', permission: 'settings.manage' } as const;
 
 // The value is checked against the key's own schema in the service, after the key is known to exist.
-const patchBody = z.object({ value: z.unknown() });
+const patchBody = z.object({ value: z.unknown().optional() });
 
 export const PATCH = withAccess<typeof access, { key: string }>(access, ({ request, ctx, auth, ip, requestId, params }) =>
   respond(async () => {

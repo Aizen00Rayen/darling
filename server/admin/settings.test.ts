@@ -222,6 +222,51 @@ describe('PATCH /api/settings/:key', () => {
   });
 });
 
+describe('security.* settings are owner-only', () => {
+  const KEY = 'security.require_2fa_super_managers';
+
+  it('a super manager with settings.manage who is not an owner gets 403 owner_required, whatever the value, and nothing changes', async () => {
+    const me = await settingsManager();
+    for (const value of [false, 'nonsense']) {
+      const res = await patch(me.cookie, KEY, { value });
+      expect(res.status).toBe(403);
+      expect(await json(res)).toEqual({ code: 'owner_required' });
+    }
+    expect(stored(KEY)).toBeUndefined();
+    expect(settingAudits()).toHaveLength(0);
+  });
+
+  it('the same manager can still read all settings and change non-security ones; an owner changes both', async () => {
+    const me = await settingsManager();
+    expect((await get(me.cookie)).status).toBe(200);
+    expect((await patch(me.cookie, 'company.name', { value: 'Rose' })).status).toBe(200);
+    const boss = await owner();
+    expect((await patch(boss.cookie, KEY, { value: false })).status).toBe(200);
+  });
+
+  it('is re-checked inside the transaction: an owner demoted after authentication is refused', async () => {
+    const boss = await owner();
+    const real = app.db.transaction.bind(app.db);
+    let done = false;
+    app.db.transaction = ((fn: never, mode?: 'immediate' | 'deferred') => {
+      if (!done) {
+        done = true;
+        app.db.run("INSERT INTO user_permissions (user_id, permission) VALUES (?, 'settings.manage')", boss.id);
+        app.db.run('UPDATE users SET is_owner = 0 WHERE id = ?', boss.id);
+      }
+      return real(fn, mode);
+    }) as typeof app.db.transaction;
+    const res = await patch(boss.cookie, KEY, { value: false });
+    expect(res.status).toBe(403);
+    expect(await json(res)).toEqual({ code: 'owner_required' });
+    expect(stored(KEY)).toBeUndefined();
+  });
+
+  it('the service refuses a stale non-owner actor for security keys', () => {
+    expect(() => updateSetting({ db: app.db, clock: app.clock }, { userId: '0190e3a0-0000-7000-8000-000000000000', ip: 'x', requestId: 'r' }, KEY, false)).toThrow(expect.objectContaining({ status: 403 }));
+  });
+});
+
 describe.each([
   ['GET', '/api/settings'],
   ['PATCH', '/api/settings/company.name'],

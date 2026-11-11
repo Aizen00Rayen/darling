@@ -429,6 +429,36 @@ describe('PATCH /api/users/:id', () => {
   });
 });
 
+describe('clearing a phone number', () => {
+  it.each([[null], ['']])('PATCH phone %j clears it, is audited, and leaves sessions alone', async (value) => {
+    const admin = await manager();
+    const sub = await seedAndLogin('sub_manager');
+    await patch(admin.cookie, sub.id, { phone: '0661 00 00 00' });
+    const res = await patch(admin.cookie, sub.id, { phone: value });
+    expect(res.status).toBe(200);
+    expect((await json(res)).phone).toBeNull();
+    expect(row(sub.id).phone).toBeNull();
+    expect((await me(sub.cookie)).status).toBe(200);
+    const entries = auditsFor('user.updated', sub.id);
+    expect(JSON.parse(entries.at(-1)?.before ?? '{}').phone).toBe('0661000000');
+    expect(JSON.parse(entries.at(-1)?.after ?? '{}').phone).toBeNull();
+  });
+
+  it('clearing an already empty phone is a no-op without an audit row; bad numbers are still refused', async () => {
+    const admin = await manager();
+    const sub = await seedUser(app, { role: 'sub_manager' });
+    expect((await patch(admin.cookie, sub.id, { phone: null })).status).toBe(200);
+    expect(auditsFor('user.updated')).toHaveLength(0);
+    expect((await patch(admin.cookie, sub.id, { phone: 'abc' })).status).toBe(400);
+    expect((await patch(admin.cookie, sub.id, { phone: '   ' })).status).toBe(400);
+  });
+
+  it('create still refuses an empty phone', async () => {
+    const admin = await manager();
+    expect((await create(admin.cookie, { email: 'p@example.test', fullName: 'Pp Pp', role: 'affiliate', phone: null })).status).toBe(400);
+  });
+});
+
 describe('owner edit bug (the form sent an owner’s effective permissions as grants)', () => {
   it('an owner edits their own name and phone: 200, sessions untouched, no grant rows', async () => {
     const boss = await owner();
