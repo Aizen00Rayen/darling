@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { POST } from './route';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createTestApp, type TestApp } from '@/server/test/app';
+import { POST, access } from './route';
+
+let app: TestApp;
+beforeEach(() => {
+  app = createTestApp();
+});
+afterEach(() => app.close());
 
 const valid = {
   productSlug: 'wet-kiss',
@@ -12,16 +19,25 @@ const valid = {
   mode: 'desk',
 };
 
-const post = (body: unknown, raw = false) =>
+// Like every route, the handler is wrapped by withAccess (public): same-origin requests carry the CSRF headers.
+const post = (body: unknown, raw = false, headers: Record<string, string> = {}) =>
   POST(
-    new Request('http://localhost/api/orders', {
+    new Request('http://localhost:3000/api/orders', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', origin: 'http://localhost:3000', 'x-requested-with': 'fetch', ...headers },
       body: raw ? (body as string) : JSON.stringify(body),
     }),
+    { params: Promise.resolve({}) },
   );
 
 describe('POST /api/orders', () => {
+  it('is public but protected against cross-site requests', async () => {
+    expect(access).toEqual({ kind: 'public' });
+    const res = await post(valid, false, { origin: 'https://evil.example' });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ code: 'csrf' });
+  });
+
   it('returns the server-computed price, fee and total', async () => {
     const res = await post(valid);
     expect(res.status).toBe(200);

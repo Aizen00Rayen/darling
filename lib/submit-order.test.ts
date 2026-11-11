@@ -27,6 +27,7 @@ describe('submitOrder', () => {
     expect(await submitOrder(order, { fetch: spy, timeoutMs: 1000 })).toEqual({ kind: 'ok' });
     expect(seen?.url).toBe('/api/orders');
     expect(seen?.init.method).toBe('POST');
+    expect((seen?.init.headers as Record<string, string>)['X-Requested-With']).toBe('fetch'); // CSRF header of withAccess
     expect(JSON.parse(seen?.init.body as string)).toEqual(order);
   });
 

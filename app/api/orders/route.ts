@@ -1,12 +1,16 @@
 import { getProduct } from '@/data/products';
 import { parseOrder } from '@/lib/order-schema';
 import { deliveryFee, orderTotal } from '@/lib/pricing';
+import { withAccess } from '@/server/security/access';
+
+// Public (the storefront form), but like every route it goes through withAccess: CSRF headers are required.
+export const access = { kind: 'public' } as const;
 
 /**
  * Order intake stub. Validates the order and recomputes every amount on the
  * server; nothing is stored or sent. The backend replaces the marked section.
  */
-export async function POST(request: Request): Promise<Response> {
+export const POST = withAccess(access, async ({ request }): Promise<Response> => {
   let body: unknown;
   try {
     body = await request.json();
@@ -31,4 +35,4 @@ export async function POST(request: Request): Promise<Response> {
   // Backend hook: persist the order and attribute it to an affiliate here.
 
   return Response.json({ ok: true, order: { ...order, unitPrice, deliveryFee: fee, total } });
-}
+});

@@ -17,7 +17,7 @@ export async function submitOrder(order: OrderInput, { fetch, timeoutMs }: Optio
   try {
     const response = await fetch('/api/orders', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Requested-With': 'fetch' },
       body: JSON.stringify(order),
       signal: controller.signal,
     });
