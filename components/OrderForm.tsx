@@ -5,6 +5,7 @@ import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { wilayas, type DeliveryMode } from '@/data/delivery';
 import type { Product } from '@/data/products';
 import { clampQuantity, deskAvailable, resolveMode, summary } from '@/lib/order-form-state';
+import { useHydrated } from '@/lib/auth/use-hydrated';
 import { parseOrder, type FieldErrors, type OrderInput } from '@/lib/order-schema';
 import { hasHiddenErrors, submitOrder } from '@/lib/submit-order';
 import { ArrowIcon, AsteriskIcon } from './icons';
@@ -12,6 +13,8 @@ import { ArrowIcon, AsteriskIcon } from './icons';
 const TIMEOUT_MS = 25_000;
 const TIMEOUT_MESSAGE =
   'La confirmation prend trop de temps. Vérifiez votre connexion avant de réessayer ; votre demande a peut-être été reçue.';
+const RATE_LIMIT_MESSAGE =
+  'Trop de commandes ont été envoyées depuis cette connexion ou avec ce numéro. Réessayez dans un moment, ou contactez-nous directement.';
 const FAILURE_MESSAGE =
   'La commande n’a pas pu être confirmée. Vos informations sont conservées dans le formulaire ; veuillez réessayer.';
 
@@ -32,6 +35,9 @@ type Props = { product: Product; shadeCode: string };
 
 export function OrderForm({ product, shadeCode }: Props) {
   const router = useRouter();
+  // False on the server and while hydrating: the submit button stays disabled until the handler below exists, so a
+  // click cannot fall back to a native submit that would carry the customer's name and phone in the URL.
+  const hydrated = useHydrated();
   const phoneRef = useRef<HTMLInputElement>(null);
   const resetOnHide = useRef(false);
 
@@ -42,6 +48,8 @@ export function OrderForm({ product, shadeCode }: Props) {
   const [chosenMode, setChosenMode] = useState<DeliveryMode>('desk');
   const [address, setAddress] = useState('');
   const [quantity, setQuantity] = useState(1);
+  // Honeypot: invisible to people, tempting to bots. Anything typed here makes the server drop the order silently.
+  const [website, setWebsite] = useState('');
   const [errors, setErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -59,6 +67,7 @@ export function OrderForm({ product, shadeCode }: Props) {
       setChosenMode('desk');
       setAddress('');
       setQuantity(1);
+      setWebsite('');
       setErrors({});
       setStatus(null);
       setPending(false);
@@ -102,15 +111,17 @@ export function OrderForm({ product, shadeCode }: Props) {
     setErrors({});
     setStatus('Envoi de votre commande…');
     setPending(true);
-    const result = await submitOrder(parsed.order, { fetch: window.fetch.bind(window), timeoutMs: TIMEOUT_MS });
+    const result = await submitOrder(parsed.order, { fetch: window.fetch.bind(window), timeoutMs: TIMEOUT_MS, honeypot: website });
     if (result.kind === 'ok') {
       resetOnHide.current = true;
-      router.push('/merci');
+      router.push(result.number ? `/merci?n=${encodeURIComponent(result.number)}` : '/merci');
       return;
     }
     if (result.kind === 'invalid') {
       setErrors(result.errors);
       setStatus(hasHiddenErrors(result.errors, SHOWN_FIELDS) ? FAILURE_MESSAGE : null);
+    } else if (result.kind === 'rate_limited') {
+      setStatus(RATE_LIMIT_MESSAGE);
     } else {
       setStatus(result.kind === 'timeout' ? TIMEOUT_MESSAGE : FAILURE_MESSAGE);
     }
@@ -118,7 +129,7 @@ export function OrderForm({ product, shadeCode }: Props) {
   }
 
   return (
-    <form id={ORDER_FORM_ID} className="order glass" onSubmit={onSubmit} aria-busy={pending || undefined}>
+    <form id={ORDER_FORM_ID} className="order glass" method="post" onSubmit={onSubmit} aria-busy={pending || undefined}>
       <div className="order-heading">
         <div>
           <p className="eyebrow">VOTRE PROCHAIN COUP DE CŒUR</p>
@@ -274,7 +285,22 @@ export function OrderForm({ product, shadeCode }: Props) {
         </strong>
       </div>
 
-      <button className="submit" type="submit" disabled={pending}>
+      <div className="hp-field" aria-hidden="true">
+        <label>
+          Site web
+          <input
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            aria-hidden="true"
+            value={website}
+            onChange={(e) => setWebsite(e.target.value)}
+          />
+        </label>
+      </div>
+
+      <button className="submit" type="submit" disabled={pending || !hydrated}>
         <span>CONFIRMER MA COMMANDE</span>
         <span>
           <ArrowIcon />

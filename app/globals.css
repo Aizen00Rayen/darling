@@ -22,3 +22,16 @@
 
 /* Clone addition: server-side field errors shown under their field. */
 .field-error{display:block;margin-top:5px;font-size:10px;font-weight:400;line-height:1.4;color:#a11836}
+
+/* Order form honeypot: out of sight and out of the layout for people, still in the DOM for bots. */
+.hp-field {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  pointer-events: none;
+}

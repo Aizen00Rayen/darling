@@ -1,15 +1,28 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowIcon, HeartIcon } from '@/components/icons';
 import { defaultProduct } from '@/data/products';
+import { validOrderNumber } from '@/lib/order-number';
 
 export const metadata: Metadata = {
   title: 'Merci, Darling — Commande reçue',
   robots: { index: false },
 };
 
-export default function Merci() {
+/** The order number from `?n=`, shown only when it has the exact `DL-YY-NNNNNN` shape. Reading the query makes this part dynamic. */
+async function OrderNumber({ searchParams }: Pick<PageProps<'/merci'>, 'searchParams'>) {
+  const number = validOrderNumber((await searchParams).n);
+  if (!number) return null;
+  return (
+    <p>
+      Numéro de commande : <strong>{number}</strong>
+    </p>
+  );
+}
+
+export default function Merci({ searchParams }: PageProps<'/merci'>) {
   return (
     <div className="thanks-page">
       <main className="thanks glass">
@@ -23,6 +36,9 @@ export default function Merci() {
           <br />
           Notre équipe vous contactera pour la confirmer.
         </p>
+        <Suspense fallback={null}>
+          <OrderNumber searchParams={searchParams} />
+        </Suspense>
         <p>Le paiement se fera à la livraison.</p>
         <Link href="/">
           RETOUR À {defaultProduct.name.toUpperCase()} <ArrowIcon />
