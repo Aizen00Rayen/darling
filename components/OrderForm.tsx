@@ -285,19 +285,17 @@ export function OrderForm({ product, shadeCode }: Props) {
         </strong>
       </div>
 
+      {/* No visible text of its own, so it adds nothing to the page text either. */}
       <div className="hp-field" aria-hidden="true">
-        <label>
-          Site web
-          <input
-            type="text"
-            name="website"
-            tabIndex={-1}
-            autoComplete="off"
-            aria-hidden="true"
-            value={website}
-            onChange={(e) => setWebsite(e.target.value)}
-          />
-        </label>
+        <input
+          type="text"
+          name="website"
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+          value={website}
+          onChange={(e) => setWebsite(e.target.value)}
+        />
       </div>
 
       <button className="submit" type="submit" disabled={pending || !hydrated}>
