@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { connection } from 'next/server';
 import { callApi } from '@/server/api-registry';
 import { logError } from '@/server/log';
 import { toApiResult } from './client';
@@ -12,6 +13,7 @@ import type { ApiInit, ApiResult } from './client';
 export async function apiServer<T>(path: string, init: ApiInit = {}): Promise<ApiResult<T>> {
   // cookies() is outside the try: during prerendering it signals "dynamic" by throwing, which must propagate.
   const cookieHeader = (await cookies()).toString();
+  await connection(); // request-time: handlers read the clock and the database
   try {
     const res = await callApi(path, init, { cookieHeader });
     return await toApiResult<T>(res);

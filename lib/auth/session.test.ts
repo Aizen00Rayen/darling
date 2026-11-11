@@ -9,6 +9,7 @@ const cookieHeader = { value: 'dl_session=abc' };
 vi.mock('@/server/auth/principal', () => ({ loadMeFromCookie: (...args: unknown[]) => loadMe(...args) }));
 vi.mock('@/server/context', () => ({ getServerContext: () => ({ marker: 'ctx' }) }));
 vi.mock('@/server/log', () => ({ logError: () => undefined }));
+vi.mock('next/server', () => ({ connection: async () => undefined }));
 vi.mock('next/headers', () => ({
   headers: async () => ({ get: (k: string) => headerValues.get(k) ?? null }),
   cookies: async () => ({ toString: () => cookieHeader.value }),

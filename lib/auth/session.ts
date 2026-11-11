@@ -1,5 +1,6 @@
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { connection } from 'next/server';
 import { homePathFor, meSchema } from '@/shared';
 import type { Me, Role } from '@/shared';
 import { loadMeFromCookie } from '@/server/auth/principal';
@@ -13,6 +14,7 @@ const ENROLLMENT_PATH = '/compte/securite?setup=1';
 export async function getMe(): Promise<Me | null> {
   // cookies() is outside the try: during prerendering it signals "dynamic" by throwing, which must propagate.
   const cookieHeader = (await cookies()).toString();
+  await connection(); // request-time: the loader reads the clock and the database
   try {
     const me = loadMeFromCookie(getServerContext(), cookieHeader);
     const parsed = meSchema.safeParse(me);

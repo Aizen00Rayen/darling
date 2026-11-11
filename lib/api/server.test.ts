@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, login, seedUser, type TestApp } from '@/server/test/app';
 
 const cookieJar = { value: '' };
+vi.mock('next/server', () => ({ connection: async () => undefined }));
 vi.mock('next/headers', () => ({ cookies: async () => ({ toString: () => cookieJar.value }) }));
 
 import { apiServer } from './server';

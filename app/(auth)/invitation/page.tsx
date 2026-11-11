@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+import { connection } from 'next/server';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Notice } from '@/ui';
@@ -32,6 +33,7 @@ async function Content({ searchParams }: { searchParams: PageProps<'/invitation'
   const title = 'Activer mon compte';
   if (!TOKEN_FORMAT.test(token)) return <InvalidLink title={title} />;
 
+  await connection(); // request-time data: the lookup reads the clock and the database
   let invite: { email: string; fullName: string } | null;
   try {
     invite = lookupInvitation(getServerContext(), token);

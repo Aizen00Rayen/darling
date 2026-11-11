@@ -3,7 +3,12 @@ export interface Clock {
   now(): number;
 }
 
-export const systemClock: Clock = { now: () => Date.now() };
+// Next.js (cacheComponents) wraps Date.now() and, in `next dev`, reports it as an error whenever the portal's
+// request-time auth lookup runs inside its prerender-validation pass, although the page is dynamic. In development
+// only, read the wall clock through performance.timeOrigin (the sanctioned API for that), which cannot drift
+// noticeably in a dev session; production and tests use Date.now() directly.
+const devNow = () => Math.floor(performance.timeOrigin + performance.now());
+export const systemClock: Clock = { now: process.env.NODE_ENV === 'development' ? devNow : () => Date.now() };
 
 export interface FixedClock extends Clock {
   advance(ms: number): void;
