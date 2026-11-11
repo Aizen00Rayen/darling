@@ -37,6 +37,9 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  experimental: {
+    cpus: 1,
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },
