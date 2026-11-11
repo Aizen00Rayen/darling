@@ -34,6 +34,9 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['better-sqlite3'],
   cacheComponents: true,
   partialPrefetching: true,
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

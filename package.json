@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "NEXT_CPU_COUNT=1 TOKIO_WORKER_THREADS=1 UV_THREADPOOL_SIZE=1 next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
@@ -19,12 +19,16 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
     "next": "16.4.6",
     "nodemailer": "^10.5.0",
     "otpauth": "^9.6.0",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "typescript": "^5",
     "zod": "^4.6.7"
   },
   "optionalDependencies": {
@@ -37,16 +41,12 @@
     "@testing-library/react": "^16",
     "@testing-library/user-event": "^14",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^22",
     "@types/nodemailer": "^8.0.2",
     "@types/qrcode": "^1.5.6",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "jsdom": "^26",
     "tsx": "^4.23.15",
-    "typescript": "^5",
     "vitest": "^5.1.0"
   }
 }
