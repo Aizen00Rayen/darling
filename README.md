@@ -42,6 +42,32 @@ Lost or expired invitation (owner still `invited`): re-run the same command with
 invitation (older links stop working) and prints the new link. If the `users` table is still empty, the `/configuration`
 page works too. An email that belongs to anyone else, or to an active owner, is refused.
 
+## Local demo
+
+Explore the admin dashboard and the influenceuse process with realistic data (about 33 orders over 14 days, clicks,
+commissions in every state, payouts, one clawback). Demo data only: never point it at real data.
+
+```bash
+npm ci
+npm run demo          # seeds ./.data-demo on first run, prints the logins, starts the dev server
+# then open http://localhost:3000/connexion
+```
+
+All accounts share the demo password `Demo-Darling-2026!` (no 2FA; no mail is sent, links go to the log):
+
+| Account | Email | What you see |
+|---|---|---|
+| Super Manager (owner) | `owner@demo.darling.test` | everything |
+| Super Manager (restricted) | `ops@demo.darling.test` | orders only (`orders.read`, `orders.write`) |
+| Sous-manager | `karim@demo.darling.test` | portal of Aya and Lina |
+| Influenceuse | `aya@demo.darling.test` | code `AYA001` (manager Karim) |
+| Influenceuse | `lina@demo.darling.test` | code `LIN001` (manager Karim) |
+| Influenceuse | `sara@demo.darling.test` | code `SAR001` (no manager; one self-referral order on hold) |
+
+Referral links: `http://localhost:3000/?ref=AYA001` (same with `LIN001`, `SAR001`): open one, place an order, and watch it
+arrive attributed. Start over with `npm run demo:seed -- --reset` (deletes only `./.data-demo/darling.sqlite`). `PORT`
+changes the port. The seed refuses `NODE_ENV=production` and any database that already has users.
+
 ## Layout
 
 | Path | What |

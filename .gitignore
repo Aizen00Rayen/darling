@@ -46,6 +46,7 @@ next-env.d.ts
 
 # local SQLite data (dev default DATA_DIR=./.data) and any database file
 /.data/
+/.data-demo/
 /data/*.sqlite*
 *.sqlite
 *.sqlite-*

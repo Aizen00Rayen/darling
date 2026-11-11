@@ -12,7 +12,9 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "create-owner": "tsx --env-file-if-exists=.env scripts/create-owner.ts"
+    "create-owner": "tsx --env-file-if-exists=.env scripts/create-owner.ts",
+    "demo:seed": "tsx scripts/demo-seed.ts",
+    "demo": "tsx scripts/demo.ts"
   },
   "dependencies": {
     "next": "16.4.6",
