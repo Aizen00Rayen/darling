@@ -1,16 +1,18 @@
 import type { OrderSource } from '@/shared';
 import type { OrderDto } from '@/shared';
 import type { OrderInput } from '@/lib/order-schema';
-import { HttpFailure, isUniqueViolation } from '../admin/errors';
+import { HttpFailure, isUniqueViolation, validation } from '../admin/errors';
 import { recordAudit } from '../audit';
 import type { Db } from '../db/sqlite';
 import { newId } from '../ids';
 import { algiersYear2 } from '../util/algiers';
+import { createCommissions } from '../commissions/lifecycle';
 import { authoriseOrdersWrite } from './authorise';
+import { attributeByCode, resolveAttribution } from './attribution';
 import { idempotencyConflict } from './errors';
 import { priceOrder } from './pricing';
 import { readOrder, readOrderRow, toOrderDto } from './read';
-import type { OrderDeps } from './types';
+import type { Attribution, OrderDeps } from './types';
 
 export interface CreateOptions {
   source: OrderSource;
@@ -18,6 +20,10 @@ export interface CreateOptions {
   createdBy?: string;
   /** A client-chosen key: a second create with the same key returns the first order instead of a new one. */
   idempotencyKey?: string;
+  /** Click id from a VERIFIED `dl_ref` cookie (storefront): attributes the order inside the transaction when still valid. */
+  refClickId?: string;
+  /** Staff only (with `createdBy`): attributes the order to this influenceuse code without a cookie. */
+  affiliateCode?: string;
   ip?: string;
   requestId?: string;
 }
@@ -65,6 +71,18 @@ export function createOrder(deps: OrderDeps, input: OrderInput, options: CreateO
       }
 
       const now = deps.clock.now();
+      let attribution: Attribution | null = null;
+      let attributedCode: string | undefined;
+      if (options.affiliateCode !== undefined && options.createdBy !== undefined) {
+        const byCode = attributeByCode(tx, options.affiliateCode, input.phone);
+        if (!byCode) throw validation({ affiliateCode: 'Code influenceuse inconnu ou inactif.' });
+        attribution = byCode;
+        attributedCode = byCode.code;
+      } else if (options.refClickId !== undefined) {
+        attribution = resolveAttribution(tx, { clickId: options.refClickId, phone: input.phone, now });
+      }
+      // A cookie attribution makes the order an "affiliate" order; a staff attribution keeps the source staff chose.
+      const source: OrderSource = attribution && attribution.clickId !== null ? 'affiliate' : options.source;
       const id = newId(deps.clock);
       const last = tx.get<{ seq: number }>("SELECT seq FROM sqlite_sequence WHERE name = 'orders'");
       const seq = (last?.seq ?? 0) + 1;
@@ -73,15 +91,16 @@ export function createOrder(deps: OrderDeps, input: OrderInput, options: CreateO
       tx.run(
         `INSERT INTO orders (seq, id, number, idempotency_key, status, source, customer_name, phone, wilaya_code, wilaya_name, commune, address,
                              delivery_mode, product_slug, product_name, shade_code, quantity, unit_price, delivery_fee, total,
-                             created_by, created_at, updated_at)
+                             created_by, created_at, updated_at, affiliate_user_id, manager_user_id, attribution_click_id, self_referral)
          VALUES (:seq, :id, :number, :key, 'new', :source, :name, :phone, :wilayaCode, :wilayaName, :commune, :address,
-                 :mode, :slug, :productName, :shade, :quantity, :unitPrice, :fee, :total, :createdBy, :now, :now)`,
+                 :mode, :slug, :productName, :shade, :quantity, :unitPrice, :fee, :total, :createdBy, :now, :now,
+                 :affiliate, :manager, :click, :selfReferral)`,
         {
           seq,
           id,
           number,
           key: key ?? null,
-          source: options.source,
+          source,
           name: input.fullName,
           phone: input.phone,
           wilayaCode: input.wilayaCode,
@@ -98,8 +117,17 @@ export function createOrder(deps: OrderDeps, input: OrderInput, options: CreateO
           total: p.total,
           createdBy: options.createdBy ?? null,
           now,
+          affiliate: attribution?.affiliateUserId ?? null,
+          manager: attribution?.managerUserId ?? null,
+          click: attribution?.clickId ?? null,
+          selfReferral: attribution?.selfReferral ?? false,
         },
       );
+      if (attribution) {
+        if (attribution.clickId !== null) tx.run('UPDATE affiliate_clicks SET order_id = ? WHERE id = ? AND order_id IS NULL', id, attribution.clickId);
+        // Commissions are created in THIS transaction: an attributed order never exists without them.
+        createCommissions(tx, deps.clock, { id, affiliateUserId: attribution.affiliateUserId, managerUserId: attribution.managerUserId, selfReferral: attribution.selfReferral }, now);
+      }
       tx.run('INSERT INTO order_status_history (order_id, from_status, to_status, actor_user_id, note, at) VALUES (?, NULL, ?, ?, NULL, ?)', id, 'new', options.createdBy ?? null, now);
       if (options.createdBy !== undefined) {
         recordAudit(tx, {
@@ -108,7 +136,7 @@ export function createOrder(deps: OrderDeps, input: OrderInput, options: CreateO
           entityType: 'order',
           entityId: id,
           // No customer data in the audit log: the order itself holds it.
-          after: { number, source: options.source, total: p.total },
+          after: { number, source, total: p.total, ...(attributedCode === undefined ? {} : { affiliateCode: attributedCode, selfReferral: attribution?.selfReferral ?? false }) },
           ...(options.ip === undefined ? {} : { ip: options.ip }),
           ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
           at: now,

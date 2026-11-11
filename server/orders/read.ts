@@ -1,4 +1,4 @@
-import { isOrderSource, isOrderStatus, type OrderDto, type OrderHistoryEntry, type OrderDetail } from '@/shared';
+import { isOrderSource, isOrderStatus, type OrderAttribution, type OrderDto, type OrderHistoryEntry, type OrderDetail } from '@/shared';
 import type { Db } from '../db/sqlite';
 import { notFound } from '../admin/errors';
 import type { OrderRow } from './types';
@@ -88,10 +88,33 @@ export function readHistory(db: Db, orderId: string): OrderHistoryEntry[] {
     });
 }
 
+/** Who an order is attributed to (influenceuse, her manager at that moment, self-referral flag), or null. */
+export function readAttribution(db: Db, orderId: string): OrderAttribution | null {
+  const row = db.get<{ affiliate_user_id: string | null; code: string | null; a_name: string | null; manager_user_id: string | null; m_name: string | null; self_referral: number; attribution_click_id: string | null }>(
+    `SELECT o.affiliate_user_id, p.code, a.full_name AS a_name, o.manager_user_id, m.full_name AS m_name, o.self_referral, o.attribution_click_id
+     FROM orders o LEFT JOIN affiliate_profiles p ON p.user_id = o.affiliate_user_id LEFT JOIN users a ON a.id = o.affiliate_user_id LEFT JOIN users m ON m.id = o.manager_user_id
+     WHERE o.id = ?`,
+    orderId,
+  );
+  if (!row || row.affiliate_user_id === null) return null;
+  return {
+    affiliate: { userId: row.affiliate_user_id, code: row.code ?? '', name: row.a_name ?? '' },
+    manager: row.manager_user_id === null ? null : { userId: row.manager_user_id, name: row.m_name ?? '' },
+    selfReferral: row.self_referral === 1,
+    viaClick: row.attribution_click_id !== null,
+  };
+}
+
+/** The order with its status history and attribution, or null. */
+export function readDetail(db: Db, id: string): OrderDetail | null {
+  const order = readOrder(db, id);
+  return order ? { ...order, history: readHistory(db, id), attribution: readAttribution(db, id) } : null;
+}
+
 /** One order with its status history; 404 for an unknown or malformed id. */
 export function getOrder(db: Db, id: string): OrderDetail {
   assertOrderId(id);
-  const order = readOrder(db, id);
-  if (!order) throw notFound();
-  return { ...order, history: readHistory(db, id) };
+  const detail = readDetail(db, id);
+  if (!detail) throw notFound();
+  return detail;
 }

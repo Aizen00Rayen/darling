@@ -1,7 +1,7 @@
 import { parseOrder } from '@/lib/order-schema';
 import { respond } from '@/server/admin/errors';
 import { parseQuery } from '@/server/admin/query';
-import { resolveAttribution } from '@/server/orders/attribution';
+import { clickIdFromRequest } from '@/server/orders/attribution';
 import { createOrder, findByIdempotencyKey } from '@/server/orders/create';
 import { fakeSuccess, honeypotFilled, readJson, successFromOrder, yearOf } from '@/server/orders/intake';
 import { listOrders } from '@/server/orders/list';
@@ -57,9 +57,12 @@ export const POST = withAccess(access.POST, ({ request, ctx, ip }) =>
     const phoneLimited = rateLimited(ctx, LIMITS.orderPhone, order.phone);
     if (phoneLimited) return phoneLimited;
 
-    const attribution = resolveAttribution(request);
+    // The signed `dl_ref` cookie (a forged or foreign one is ignored) names the click; the attribution itself is decided
+    // inside the order's transaction, together with the commissions.
+    const clickId = clickIdFromRequest(request, ctx.config);
     const { order: stored } = createOrder(ctx, order, {
-      source: attribution?.source ?? 'website',
+      source: 'website',
+      ...(clickId === null ? {} : { refClickId: clickId }),
       ...(key === null ? {} : { idempotencyKey: key }),
     });
     return json(200, successFromOrder(order, stored));

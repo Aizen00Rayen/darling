@@ -17,7 +17,7 @@ export type { AuthContext } from '../auth/principal';
 export type Access =
   | { kind: 'public' }
   | { kind: 'authenticated'; allowDuring2faEnrollment?: boolean }
-  | { kind: 'role'; roles: Role[] }
+  | { kind: 'role'; roles: readonly Role[] }
   | { kind: 'permission'; permission: Permission }
   | { kind: 'owner' };
 

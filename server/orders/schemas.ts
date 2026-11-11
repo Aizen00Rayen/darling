@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MANUAL_ORDER_SOURCES, ORDER_SOURCES, ORDER_STATUSES } from '@/shared';
+import { AFFILIATE_CODE_PATTERN, MANUAL_ORDER_SOURCES, ORDER_SOURCES, ORDER_STATUSES } from '@/shared';
 import { dayParam, pageParam, windowRules } from '../admin/audit-log';
 
 /** `GET /api/orders` query string: filters validated here, pages of 50 in the service. */
@@ -31,3 +31,10 @@ export const jsonObject = z.record(z.string(), z.unknown());
 
 /** Header values accepted as an Idempotency-Key: 8 to 64 URL-safe characters (a UUID fits). */
 export const IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** Optional influenceuse code on a manual order: blank is "none", otherwise `AYA001` (case-insensitive). */
+export const affiliateCodeField = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((v) => (typeof v === 'string' ? v.trim().toUpperCase() : ''))
+  .pipe(z.string().refine((v) => v === '' || AFFILIATE_CODE_PATTERN.test(v), 'Code influenceuse invalide (exemple : AYA001).'))
+  .transform((v) => (v === '' ? undefined : v));

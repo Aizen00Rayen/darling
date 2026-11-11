@@ -17,6 +17,16 @@ import * as orders from '@/app/api/orders/route';
 import * as orderById from '@/app/api/orders/[id]/route';
 import * as orderStatus from '@/app/api/orders/[id]/status/route';
 import * as orderManual from '@/app/api/orders/manual/route';
+import * as affiliates from '@/app/api/affiliates/route';
+import * as affiliateById from '@/app/api/affiliates/[id]/route';
+import * as affiliateClick from '@/app/api/affiliate/click/route';
+import * as commissions from '@/app/api/commissions/route';
+import * as commissionRelease from '@/app/api/commissions/[id]/release-hold/route';
+import * as commissionCancel from '@/app/api/commissions/[id]/cancel/route';
+import * as payouts from '@/app/api/payouts/route';
+import * as payoutsPayable from '@/app/api/payouts/payable/route';
+import * as meAffiliate from '@/app/api/me/affiliate/route';
+import * as meTeam from '@/app/api/me/team/route';
 import * as auditLog from '@/app/api/audit-log/route';
 import * as loginEvents from '@/app/api/login-events/route';
 import * as settings from '@/app/api/settings/route';
@@ -66,6 +76,16 @@ function route(pattern: string, mod: { access: RouteAccess } & Partial<Record<Me
 
 export const ROUTES: readonly RegisteredRoute[] = [
   route('/api/health', health),
+  route('/api/affiliate/click', affiliateClick),
+  route('/api/affiliates', affiliates),
+  route('/api/affiliates/:id', affiliateById),
+  route('/api/commissions', commissions),
+  route('/api/commissions/:id/release-hold', commissionRelease),
+  route('/api/commissions/:id/cancel', commissionCancel),
+  route('/api/payouts', payouts),
+  route('/api/payouts/payable', payoutsPayable),
+  route('/api/me/affiliate', meAffiliate),
+  route('/api/me/team', meTeam),
   route('/api/orders', orders),
   route('/api/orders/manual', orderManual),
   route('/api/orders/:id', orderById),

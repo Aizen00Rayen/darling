@@ -45,9 +45,17 @@ export interface OrderRow {
   shipped_at: number | null;
   delivered_at: number | null;
   closed_at: number | null;
+  affiliate_user_id: string | null;
+  manager_user_id: string | null;
+  attribution_click_id: string | null;
+  self_referral: number;
 }
 
-/** Placeholder for what M5 attaches to an order (affiliate and manager); empty until then. */
+/** Who an order is attributed to: one influenceuse, her current manager at that moment, the click (when it came through a link). */
 export interface Attribution {
-  source: 'affiliate';
+  affiliateUserId: string;
+  managerUserId: string | null;
+  clickId: string | null;
+  /** The customer's phone is the influenceuse's (or her manager's): the commissions are created on hold. */
+  selfReferral: boolean;
 }

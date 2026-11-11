@@ -88,6 +88,8 @@ export const LIMITS = {
   orderIp: { bucket: 'orders.ip', max: 30, windowMs: 3_600_000, scaleUnknown: true },
   /** Storefront orders: at most 3 an hour per customer phone number (normalised), whatever the address. */
   orderPhone: { bucket: 'orders.phone', max: 3, windowMs: 3_600_000 },
+  /** Affiliate link clicks: 60 an hour per client address (the shared "unknown" bucket gets 4x). */
+  affiliateClick: { bucket: 'affiliate.click', max: 60, windowMs: 3_600_000, scaleUnknown: true },
   /** 2FA enable, 2FA disable and password change: 5 a minute per authenticated USER, together. */
   passwordVerify: { bucket: 'auth.password-verify', max: 5, windowMs: 60_000 },
 } as const;

@@ -1,5 +1,6 @@
 // Order vocabulary shared by the server, the storefront and the portal: statuses, sources, the status machine and
-// the shapes the API returns. Everything here is plain data (no imports from server/).
+// the shapes the API returns. Everything here is plain data (only type imports).
+import type { OrderAttribution } from './affiliate';
 
 export const ORDER_STATUSES = ['new', 'confirmed', 'shipped', 'delivered', 'cancelled', 'refused', 'returned'] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
@@ -99,6 +100,8 @@ export interface OrderHistoryEntry {
 
 export interface OrderDetail extends OrderDto {
   history: OrderHistoryEntry[];
+  /** The influenceuse (and manager) the order is attributed to; null for an ordinary order. */
+  attribution: OrderAttribution | null;
 }
 
 export interface OrderStats {

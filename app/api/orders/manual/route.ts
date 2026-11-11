@@ -2,7 +2,7 @@ import { parseOrder } from '@/lib/order-schema';
 import { respond } from '@/server/admin/errors';
 import { createOrder } from '@/server/orders/create';
 import { getOrder } from '@/server/orders/read';
-import { jsonObject, manualSource } from '@/server/orders/schemas';
+import { affiliateCodeField, jsonObject, manualSource } from '@/server/orders/schemas';
 import { json, parseBody, validationFailed, withAccess } from '@/server/security/access';
 
 export const access = { kind: 'permission', permission: 'orders.write' } as const;
@@ -15,16 +15,18 @@ export const POST = withAccess(access, ({ request, ctx, auth, ip, requestId }) =
   respond(async () => {
     const body = await parseBody(request, jsonObject);
     if (!body.ok) return body.response;
-    const { source, ...fields } = body.data;
+    const { source, affiliateCode, ...fields } = body.data;
 
     const errors: Record<string, string> = {};
     const sourceResult = manualSource.safeParse(source);
     if (!sourceResult.success) errors.source = sourceResult.error.issues[0]?.message ?? 'Provenance invalide.';
+    const codeResult = affiliateCodeField.safeParse(affiliateCode);
+    if (!codeResult.success) errors.affiliateCode = codeResult.error.issues[0]?.message ?? 'Code invalide.';
     const order = parseOrder(fields);
     if (!order.ok) Object.assign(errors, order.errors);
-    if (!sourceResult.success || !order.ok) return validationFailed(errors);
+    if (!sourceResult.success || !codeResult.success || !order.ok) return validationFailed(errors);
 
-    const { order: created } = createOrder(ctx, order.order, { source: sourceResult.data, createdBy: auth.userId, ip, requestId });
+    const { order: created } = createOrder(ctx, order.order, { source: sourceResult.data, createdBy: auth.userId, ip, requestId, ...(codeResult.data ? { affiliateCode: codeResult.data } : {}) });
     return json(201, getOrder(ctx.db, created.id));
   }),
 );

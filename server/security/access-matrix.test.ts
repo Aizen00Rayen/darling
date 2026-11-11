@@ -48,10 +48,17 @@ const AUDIT = { permission: 'audit.read' as const, verdicts: PERMISSION_ROUTE };
 const SETTINGS = { permission: 'settings.manage' as const, verdicts: PERMISSION_ROUTE };
 const ORDERS_READ = { permission: 'orders.read' as const, verdicts: PERMISSION_ROUTE };
 const ORDERS_WRITE = { permission: 'orders.write' as const, verdicts: PERMISSION_ROUTE };
+const COMMISSIONS = { permission: 'commissions.manage' as const, verdicts: PERMISSION_ROUTE };
+const PAYOUTS = { permission: 'payouts.manage' as const, verdicts: PERMISSION_ROUTE };
+// Role routes: only that role gets in (and a super manager still enrolling is told to enrol first), nobody else, not even owners.
+const ONLY_AFFILIATE: Verdict[] = ['U', 'ok', 'F', 'F', 'F', 'F', 'E'];
+const ONLY_SUB_MANAGER: Verdict[] = ['U', 'F', 'ok', 'F', 'F', 'F', 'E'];
 const MATRIX: Row[] = [
   { route: '/api/health', method: 'GET', verdicts: ALL_OK, allowed: [200] },
   // /api/orders has per-method access: the storefront POST is public, the staff list needs orders.read.
   { route: '/api/orders', method: 'POST', body: {}, verdicts: ALL_OK, allowed: [400] },
+  // The influenceuse link was opened: public (CSRF headers still required), silent for unknown codes.
+  { route: '/api/affiliate/click', method: 'POST', body: {}, verdicts: ALL_OK, allowed: [400] },
   { route: '/api/auth/login', method: 'POST', body: {}, verdicts: ALL_OK, allowed: [400] },
   { route: '/api/auth/password/forgot', method: 'POST', body: {}, verdicts: ALL_OK, allowed: [400] },
   { route: '/api/auth/password/reset', method: 'POST', body: {}, verdicts: ALL_OK, allowed: [400] },
@@ -83,9 +90,25 @@ const MATRIX: Row[] = [
   { route: '/api/orders/:id', method: 'PATCH', path: `/api/orders/${UNKNOWN_ID}`, body: {}, ...ORDERS_WRITE, allowed: [400] },
   { route: '/api/orders/:id/status', method: 'POST', path: `/api/orders/${UNKNOWN_ID}/status`, body: {}, ...ORDERS_WRITE, allowed: [400] },
   { route: '/api/orders/manual', method: 'POST', body: {}, ...ORDERS_WRITE, allowed: [400] },
+  // commissions.manage / payouts.manage (separate permissions: holding one never gives the other)
+  { route: '/api/affiliates', method: 'GET', ...COMMISSIONS, allowed: [200] },
+  { route: '/api/affiliates/:id', method: 'GET', path: `/api/affiliates/${UNKNOWN_ID}`, ...COMMISSIONS, allowed: [404] },
+  { route: '/api/commissions', method: 'GET', ...COMMISSIONS, allowed: [200] },
+  { route: '/api/commissions/:id/release-hold', method: 'POST', path: `/api/commissions/${UNKNOWN_ID}/release-hold`, ...COMMISSIONS, allowed: [404] },
+  { route: '/api/commissions/:id/cancel', method: 'POST', path: `/api/commissions/${UNKNOWN_ID}/cancel`, body: {}, ...COMMISSIONS, allowed: [400] },
+  { route: '/api/payouts', method: 'GET', ...PAYOUTS, allowed: [200] },
+  { route: '/api/payouts', method: 'POST', body: {}, ...PAYOUTS, allowed: [400] },
+  { route: '/api/payouts/payable', method: 'GET', ...PAYOUTS, allowed: [200] },
+  // self-service, by role (the seeded influenceuse has no profile, so her page is a 404: the handler ran)
+  { route: '/api/me/affiliate', method: 'GET', verdicts: ONLY_AFFILIATE, allowed: [200, 404] },
+  { route: '/api/me/team', method: 'GET', verdicts: ONLY_SUB_MANAGER, allowed: [200] },
   // settings.manage
   { route: '/api/settings', method: 'GET', ...SETTINGS, allowed: [200] },
   { route: '/api/settings/:key', method: 'PATCH', path: '/api/settings/company.name', body: {}, ...SETTINGS, allowed: [400] },
+  // commission.* and attribution.* keys: owner-only too (what money is owed)
+  { route: '/api/settings/:key', method: 'PATCH', path: '/api/settings/commission.affiliate_amount', body: {}, ...SETTINGS, verdicts: PERMISSION_OWNER_ONLY, allowed: [400] },
+  { route: '/api/settings/:key', method: 'PATCH', path: '/api/settings/commission.manager_amount', body: {}, ...SETTINGS, verdicts: PERMISSION_OWNER_ONLY, allowed: [400] },
+  { route: '/api/settings/:key', method: 'PATCH', path: '/api/settings/attribution.window_days', body: {}, ...SETTINGS, verdicts: PERMISSION_OWNER_ONLY, allowed: [400] },
   // security.* keys: owner-only (403 owner_required for a super manager who merely holds settings.manage)
   { route: '/api/settings/:key', method: 'PATCH', path: '/api/settings/security.require_2fa_super_managers', body: {}, ...SETTINGS, verdicts: PERMISSION_OWNER_ONLY, allowed: [400] },
 ];
@@ -150,7 +173,7 @@ describe('route files', () => {
 
 describe('access matrix', () => {
   let app: TestApp;
-  const OTHER_PERMISSIONS: Permission[] = ['users.manage', 'audit.read', 'settings.manage', 'orders.read', 'orders.write'];
+  const OTHER_PERMISSIONS: Permission[] = ['users.manage', 'audit.read', 'settings.manage', 'orders.read', 'orders.write', 'commissions.manage', 'payouts.manage'];
 
   async function freshCookie(p: Principal, permission?: Permission): Promise<string | undefined> {
     if (p === 'anonymous') return undefined;

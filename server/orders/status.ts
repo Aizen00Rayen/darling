@@ -1,9 +1,10 @@
 import { INTERNAL_NOTES_MAX, STATUS_NOTE_MAX, canTransition, isOrderStatus, type OrderDetail, type OrderDto, type OrderStatus } from '@/shared';
 import { HttpFailure, notFound } from '../admin/errors';
 import { recordAudit } from '../audit';
+import { applyOrderStatus } from '../commissions/lifecycle';
 import { authoriseOrdersWrite } from './authorise';
 import { InvalidTransitionError } from './errors';
-import { assertOrderId, readHistory, readOrder } from './read';
+import { assertOrderId, readDetail, readOrder } from './read';
 import type { OrderActor, OrderDeps } from './types';
 
 const blankToNull = (text: string | null | undefined): string | null => {
@@ -62,9 +63,11 @@ export function changeStatus(deps: OrderDeps, actor: OrderActor, id: string, to:
       requestId: actor.requestId,
       at: now,
     });
-    const order = readOrder(tx, id);
-    if (!order) throw notFound();
-    return { ...order, history: readHistory(tx, id) };
+    // The commissions follow the order in the SAME transaction (validate on delivery, cancel or claw back otherwise).
+    applyOrderStatus(tx, deps.clock, id, to, { userId: actor.userId, ip: actor.ip, requestId: actor.requestId }, now);
+    const detail = readDetail(tx, id);
+    if (!detail) throw notFound();
+    return detail;
   }, 'immediate');
 }
 

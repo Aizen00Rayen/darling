@@ -3,7 +3,6 @@ import { ORDER_NUMBER_PATTERN } from '@/shared';
 import type { Permission } from '@/shared';
 import { createTestApp, login, seedUser, totpCodeAt, type TestApp } from '../test/app';
 import { orderInput } from '../test/orders';
-import { resolveAttribution } from './attribution';
 
 let app: TestApp;
 beforeEach(() => {
@@ -239,12 +238,6 @@ describe('POST /api/orders (storefront intake)', () => {
     const failed = await place(orderInput({ fullName: 'Zzyzx Qwerty', phone: '0698765433' }));
     expect(failed.status).toBe(500);
     expect(written.join('\n')).not.toMatch(/Zzyzx|Qwerty|0698765432|0698765433/);
-  });
-});
-
-describe('resolveAttribution (M5 hook)', () => {
-  it('attributes nothing yet', () => {
-    expect(resolveAttribution(new Request('http://localhost:3000/api/orders', { headers: { cookie: 'dl_ref=AYA001' } }))).toBeNull();
   });
 });
 
