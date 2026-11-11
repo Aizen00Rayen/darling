@@ -120,6 +120,7 @@ async function Content({ searchParams }: PageProps<'/admin/journal'>) {
             <datalist id="j-entities">
               <option value="user" />
               <option value="setting" />
+              <option value="order" />
             </datalist>
           </div>
         ) : (

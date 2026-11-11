@@ -13,6 +13,8 @@ const MESSAGES: Record<string, string> = {
   invalid_status: 'Cette action n’est pas possible pour le statut actuel de l’utilisateur.',
   mail_failed: 'Le message n’a pas pu être envoyé. Réessayez.',
   not_found: 'Introuvable.',
+  invalid_transition: 'Ce changement de statut n’est pas possible.',
+  idempotency_conflict: 'Cette commande a déjà été enregistrée pour un autre client. Actualisez la page et réessayez.',
   too_many_attempts: 'Trop de tentatives. Réessayez dans une minute.',
   invalid_credentials: 'Mot de passe incorrect.',
   totp_invalid: 'Code invalide ou déjà utilisé.',

@@ -68,3 +68,21 @@
 .dl-portal .p-qr img { width: 200px; height: 200px; background: #fff; padding: 8px; border-radius: var(--dl-radius-sm); border: 1px solid var(--line); }
 .dl-portal .p-secret { font: 700 16px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 1px; padding: 12px 14px; background: #fff; border: 1px solid var(--line); border-radius: var(--dl-radius-sm); overflow-wrap: anywhere; user-select: all; }
 .dl-portal .p-banner { margin-bottom: 20px; }
+
+/* Orders */
+.dl-portal .p-stats { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.dl-portal .p-stat { display: grid; gap: 4px; padding: 16px 18px; border-radius: var(--dl-radius-md); min-height: 44px; min-width: 0; }
+.dl-portal a.p-stat:hover { border-color: var(--pink); }
+.dl-portal .p-stat__label { font-size: 11px; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase; color: var(--muted); }
+.dl-portal .p-stat__value { font-family: var(--font-space-grotesk), Arial, sans-serif; font-size: 30px; line-height: 1.1; letter-spacing: -1px; }
+.dl-portal .p-stat--accent { border-color: var(--pink); }
+.dl-portal .p-section-title { font-size: 11px; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase; color: var(--muted); }
+.dl-portal .p-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.dl-portal .p-timeline li { position: relative; display: grid; gap: 2px; padding: 0 0 18px 22px; border-left: 2px solid var(--line); margin-left: 6px; }
+.dl-portal .p-timeline li:last-child { padding-bottom: 0; border-left-color: transparent; }
+.dl-portal .p-timeline li::before { content: ''; position: absolute; left: -7px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: var(--pink-ink); }
+.dl-portal .p-timeline__when { font-size: 13px; color: var(--muted); }
+.dl-portal .p-timeline__note { font-size: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.dl-portal .p-notes { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.dl-portal .p-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dl-portal .p-money { white-space: nowrap; }

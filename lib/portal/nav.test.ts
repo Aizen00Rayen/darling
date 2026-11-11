@@ -6,7 +6,7 @@ const labels = (items: { label: string }[]) => items.map((i) => i.label);
 describe('navFor', () => {
   it('gives an owner-like super manager every admin entry', () => {
     const nav = navFor('super_manager', ['users.manage', 'audit.read', 'settings.manage']);
-    expect(labels(nav)).toEqual(['Tableau de bord', 'Utilisateurs', 'Journal', 'Paramètres', 'Mon compte']);
+    expect(labels(nav)).toEqual(['Tableau de bord', 'Utilisateurs', 'Journal', 'Paramètres', 'Mon compte']); // no orders.read here
     expect(nav.map((i) => i.href)).toEqual([
       '/admin',
       '/admin/utilisateurs',
@@ -14,6 +14,15 @@ describe('navFor', () => {
       '/admin/parametres',
       '/compte/securite',
     ]);
+  });
+
+  it('shows Commandes after the dashboard to whoever holds orders.read, and only to them', () => {
+    expect(labels(navFor('super_manager', ['orders.read']))).toEqual(['Tableau de bord', 'Commandes', 'Mon compte']);
+    expect(navFor('super_manager', ['orders.read']).find((i) => i.label === 'Commandes')?.href).toBe('/admin/commandes');
+    // orders.write alone gives no list to look at
+    expect(labels(navFor('super_manager', ['orders.write']))).toEqual(['Tableau de bord', 'Mon compte']);
+    expect(labels(navFor('affiliate', ['orders.read']))).not.toContain('Commandes');
+    expect(labels(navFor('sub_manager', ['orders.read']))).not.toContain('Commandes');
   });
 
   it('hides entries the super manager has no permission for', () => {
