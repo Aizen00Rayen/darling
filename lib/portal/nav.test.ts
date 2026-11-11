@@ -25,6 +25,12 @@ describe('navFor', () => {
     expect(labels(navFor('sub_manager', ['orders.read']))).not.toContain('Commandes');
   });
 
+  it('shows Produits to catalog.write holders', () => {
+    const nav = navFor('super_manager', ['catalog.write']);
+    expect(labels(nav)).toEqual(['Tableau de bord', 'Produits', 'Mon compte']);
+    expect(nav.find((i) => i.label === 'Produits')?.href).toBe('/admin/produits');
+  });
+
   it('shows Influenceuses and Commissions to commissions.manage holders only, between Commandes and Utilisateurs', () => {
     const nav = navFor('super_manager', ['users.manage', 'orders.read', 'commissions.manage']);
     expect(labels(nav)).toEqual(['Tableau de bord', 'Commandes', 'Influenceuses', 'Commissions', 'Utilisateurs', 'Mon compte']);

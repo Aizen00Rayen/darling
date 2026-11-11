@@ -27,14 +27,14 @@ describe('POST /api/orders (storefront intake)', () => {
     const res = await place(orderInput());
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ ok: true, order: { ...orderInput(), unitPrice: 3000, deliveryFee: 300, total: 6300, number: 'DL-23-000001' } });
+    expect(body).toEqual({ ok: true, order: { ...orderInput(), unitPrice: 3300, deliveryFee: 300, total: 6900, number: 'DL-23-000001' } });
     expect(body.order.number).toMatch(ORDER_NUMBER_PATTERN);
     expect(app.db.get('SELECT source, status, created_by, customer_name, total FROM orders')).toEqual({
       source: 'website',
       status: 'new',
       created_by: null,
       customer_name: 'Amel B',
-      total: 6300,
+      total: 6900,
     });
     expect(count('order_status_history')).toBe(1);
   });
@@ -42,8 +42,8 @@ describe('POST /api/orders (storefront intake)', () => {
   it('normalises the phone and reprices on the server, ignoring everything the client claims', async () => {
     const res = await place({ ...orderInput({ phone: '0612345678' }), phone: '+213 612 34 56 78', unitPrice: 1, deliveryFee: 0, total: 1, status: 'delivered', source: 'affiliate', createdBy: 'x' });
     const body = await res.json();
-    expect(body.order).toMatchObject({ phone: '0612345678', unitPrice: 3000, deliveryFee: 300, total: 6300 });
-    expect(app.db.get('SELECT status, source, phone, unit_price, total FROM orders')).toEqual({ status: 'new', source: 'website', phone: '0612345678', unit_price: 3000, total: 6300 });
+    expect(body.order).toMatchObject({ phone: '0612345678', unitPrice: 3300, deliveryFee: 300, total: 6900 });
+    expect(app.db.get('SELECT status, source, phone, unit_price, total FROM orders')).toEqual({ status: 'new', source: 'website', phone: '0612345678', unit_price: 3300, total: 6900 });
   });
 
   it('rejects an invalid order with 400 { ok: false, errors } and stores nothing', async () => {
@@ -81,7 +81,7 @@ describe('POST /api/orders (storefront intake)', () => {
       const body = await res.json();
       expect(body.ok).toBe(true);
       expect(body.order.number).toMatch(ORDER_NUMBER_PATTERN);
-      expect(body.order).toMatchObject({ total: 6300 }); // same shape as a real success
+      expect(body.order).toMatchObject({ total: 6900 }); // same shape as a real success
       expect(count('orders')).toBe(0);
       expect(count('order_status_history')).toBe(0);
       expect(count('audit_log')).toBe(0);
@@ -392,7 +392,7 @@ describe('POST /api/orders/manual', () => {
     const res = await app.call('/api/orders/manual', { body: { ...orderInput({ quantity: 1, wilayaCode: 37, mode: 'home', address: 'Cité 5 juillet' }), source: 'whatsapp', total: 1 }, cookie: me.cookie });
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body).toMatchObject({ number: 'DL-23-000001', source: 'whatsapp', status: 'new', total: 4650, createdBy: { id: me.id }, deliveryMode: 'home', address: 'Cité 5 juillet' });
+    expect(body).toMatchObject({ number: 'DL-23-000001', source: 'whatsapp', status: 'new', total: 4950, createdBy: { id: me.id }, deliveryMode: 'home', address: 'Cité 5 juillet' });
     expect(body.history).toHaveLength(1);
     expect(app.db.get("SELECT actor_user_id, action, entity_id FROM audit_log WHERE action = 'order.created_manual'")).toEqual({ actor_user_id: me.id, action: 'order.created_manual', entity_id: body.id });
   });

@@ -44,18 +44,18 @@ describe('POST /api/orders', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       ok: true,
-      order: { ...valid, unitPrice: 3000, deliveryFee: 300, total: 6300, number: 'DL-23-000001' },
+      order: { ...valid, unitPrice: 3300, deliveryFee: 300, total: 6900, number: 'DL-23-000001' },
     });
   });
 
   it('ignores prices sent by the client', async () => {
     const res = await post({ ...valid, total: 1, unitPrice: 1, deliveryFee: 0 });
-    expect((await res.json()).order).toMatchObject({ unitPrice: 3000, deliveryFee: 300, total: 6300 });
+    expect((await res.json()).order).toMatchObject({ unitPrice: 3300, deliveryFee: 300, total: 6900 });
   });
 
   it('charges home delivery when chosen', async () => {
     const res = await post({ ...valid, quantity: 1, wilayaCode: 37, mode: 'home', address: 'Cité 5 juillet' });
-    expect((await res.json()).order).toMatchObject({ deliveryFee: 1650, total: 4650 });
+    expect((await res.json()).order).toMatchObject({ deliveryFee: 1650, total: 4950 });
   });
 
   it('rejects an invalid field with 400 and a field error', async () => {

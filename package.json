@@ -15,7 +15,8 @@
     "create-owner": "tsx --env-file-if-exists=.env scripts/create-owner.ts",
     "demo:seed": "tsx scripts/demo-seed.ts",
     "preflight": "tsx --env-file-if-exists=.env scripts/preflight.ts",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsx scripts/demo.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "next": "16.4.6",
@@ -30,6 +31,7 @@
     "better-sqlite3": "^12.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.0",
     "@testing-library/dom": "^10",
     "@testing-library/jest-dom": "^6",
     "@testing-library/react": "^16",

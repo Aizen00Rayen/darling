@@ -252,7 +252,7 @@ export function createUser(deps: UsersDeps, actor: Actor, input: CreateUserInput
       for (const permission of grants) tx.run('INSERT INTO user_permissions (user_id, permission) VALUES (?, ?)', id, permission);
       const row = readUser(tx, id) as Row;
       // An influenceuse gets her profile and code in this same transaction (a failure rolls the account back too).
-      if (input.role === 'affiliate') createProfile(tx, actor, { id, fullName: row.full_name }, input.managerUserId ?? null, now);
+      if (input.role === 'affiliate') createProfile(tx, actor, { id, fullName: row.full_name }, input.managerUserId ?? null, now, input.affiliateCode);
       recordAudit(tx, {
         actorUserId: actor.userId,
         action: 'user.created',
@@ -435,11 +435,13 @@ export function revokeSessions(deps: UsersDeps, actor: Actor, id: string, input:
  * goes out AFTER the commit. Returns false when the transport fails: the new token and the audit row stay (the
  * link was issued but not delivered), and the next resend replaces that token.
  */
-export async function resendInvite(deps: UsersDeps, actor: Actor, id: string, input: ActionInput): Promise<boolean> {
+export async function resendInvite(deps: UsersDeps, actor: Actor, id: string, input: ActionInput): Promise<{ sent: boolean; link: string }> {
+  let link = '';
   const mail = mutate(deps, actor, id, (tx, { target, now, self }) => {
     requireOwnerFor(target, self);
     if (target.status !== 'invited') throw new HttpFailure(409, 'not_invited');
     const issued = issueInviteMail(deps, tx, { id: target.id, email: target.email, fullName: target.full_name, role: target.role });
+    link = /https?:\/\/[^\s<>"]+/.exec(issued.text)?.[0] ?? '';
     recordAudit(tx, {
       actorUserId: actor.userId,
       action: 'user.invite_resent',
@@ -454,10 +456,10 @@ export async function resendInvite(deps: UsersDeps, actor: Actor, id: string, in
   });
   try {
     await deps.mailer.send(mail);
-    return true;
+    return { sent: true, link };
   } catch (err) {
     // Only the kind of error is logged: a transport error usually quotes the recipient.
     log.error('mail.invite_failed', { userId: id, errName: err instanceof Error ? err.name : 'unknown' });
-    return false;
+    return { sent: false, link };
   }
 }

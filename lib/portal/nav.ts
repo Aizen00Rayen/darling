@@ -9,6 +9,7 @@ const DIAGNOSTICS: NavItem = { href: '/admin/diagnostics', label: 'Diagnostic' }
 
 const ADMIN_PAGES: { item: NavItem; permission: Permission }[] = [
   { item: { href: '/admin/commandes', label: 'Commandes' }, permission: 'orders.read' },
+  { item: { href: '/admin/produits', label: 'Produits' }, permission: 'catalog.write' },
   { item: { href: '/admin/influenceuses', label: 'Influenceuses' }, permission: 'commissions.manage' },
   { item: { href: '/admin/commissions', label: 'Commissions' }, permission: 'commissions.manage' },
   { item: { href: '/admin/utilisateurs', label: 'Utilisateurs' }, permission: 'users.manage' },

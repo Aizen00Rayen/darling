@@ -4,6 +4,7 @@
 > PostgreSQL. The first launch uses a single npm Next.js app with SQLite instead, see
 > [`superpowers/specs/2026-11-11-lean-launch-design.md`](superpowers/specs/2026-11-11-lean-launch-design.md). The Postgres
 > implementation remains on the `feat/foundation` branch for reference; paths and commands below no longer exist on this branch.
+> For deploying and running the launch app see [`deploy-hostinger.md`](deploy-hostinger.md) and [`operations.md`](operations.md).
 
 The foundation is everything the later sub-projects build on: the authentication and authorization API,
 the user and audit tables, the three portals (admin, manager, affiliate) and the end-to-end tests.

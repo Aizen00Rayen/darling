@@ -31,9 +31,9 @@ describe('createOrder (storefront)', () => {
       productName: 'Wet Kiss',
       shadeCode: '*02',
       quantity: 2,
-      unitPrice: 3000,
+      unitPrice: 3300,
       deliveryFee: 300,
-      total: 6300,
+      total: 6900,
       internalNotes: null,
       createdBy: null,
       confirmedAt: null,
@@ -43,12 +43,12 @@ describe('createOrder (storefront)', () => {
     });
     expect(order.createdAt).toBe(new Date(app.clock.now()).toISOString());
     const row = app.db.get<Record<string, unknown>>('SELECT * FROM orders WHERE id = ?', order.id);
-    expect(row).toMatchObject({ unit_price: 3000, delivery_fee: 300, total: 6300, created_at: app.clock.now(), updated_at: app.clock.now() });
+    expect(row).toMatchObject({ unit_price: 3300, delivery_fee: 300, total: 6900, created_at: app.clock.now(), updated_at: app.clock.now() });
   });
 
   it('charges home delivery and keeps the address', () => {
     const { order } = createOrder(app, orderInput({ quantity: 1, wilayaCode: 37, mode: 'home', address: 'Cité 5 juillet' }), { source: 'website' });
-    expect(order).toMatchObject({ deliveryMode: 'home', address: 'Cité 5 juillet', deliveryFee: 1650, total: 4650, wilayaName: 'Tindouf' });
+    expect(order).toMatchObject({ deliveryMode: 'home', address: 'Cité 5 juillet', deliveryFee: 1650, total: 4950, wilayaName: 'Tindouf' });
   });
 
   it('writes the first history row ("new", no previous status, no actor) in the same transaction', () => {
@@ -84,7 +84,7 @@ describe('createOrder (storefront)', () => {
 
   it('ignores any price carried by the input (prices come from data/ only)', () => {
     const tampered = { ...orderInput(), unitPrice: 1, deliveryFee: 0, total: 1 } as unknown as ReturnType<typeof orderInput>;
-    expect(createOrder(app, tampered, { source: 'website' }).order).toMatchObject({ unitPrice: 3000, deliveryFee: 300, total: 6300 });
+    expect(createOrder(app, tampered, { source: 'website' }).order).toMatchObject({ unitPrice: 3300, deliveryFee: 300, total: 6900 });
   });
 });
 
@@ -198,7 +198,7 @@ describe('createOrder (manual entry by staff)', () => {
       'SELECT * FROM audit_log',
     );
     expect(audit).toMatchObject({ actor_user_id: staff.userId, action: 'order.created_manual', entity_type: 'order', entity_id: order.id, ip: '10.9.9.9', request_id: 'req-test' });
-    expect(JSON.parse(audit!.after)).toEqual({ number: order.number, source: 'whatsapp', total: 6300 });
+    expect(JSON.parse(audit!.after)).toEqual({ number: order.number, source: 'whatsapp', total: 6900 });
     expect(audit!.after).not.toContain('0612345678'); // no customer data in the audit log
     expect(audit!.after).not.toContain('Amel');
   });

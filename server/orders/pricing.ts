@@ -1,5 +1,7 @@
 import { getWilaya } from '@/data/delivery';
 import { getProduct } from '@/data/products';
+import { readProductBySlug } from '@/server/products/db';
+import type { Db } from '../db/sqlite';
 import type { OrderInput } from '@/lib/order-schema';
 import { deliveryFee, orderTotal } from '@/lib/pricing';
 
@@ -14,12 +16,12 @@ export interface PricedOrder {
 export type PriceResult = { ok: true; priced: PricedOrder } | { ok: false; errors: Record<string, string> };
 
 /**
- * The ONLY place an order's amounts are decided: product price from data/products, delivery fee from
- * data/delivery, arithmetic from lib/pricing. Whatever a client sent is never looked at.
+ * The ONLY place an order's amounts are decided: product price from data/products or SQLite products,
+ * delivery fee from data/delivery, arithmetic from lib/pricing. Whatever a client sent is never looked at.
  * Not ok when the product, shade or wilaya is unknown or the wilaya has no service for the chosen mode.
  */
-export function priceOrder(input: OrderInput): PriceResult {
-  const product = getProduct(input.productSlug);
+export function priceOrder(input: OrderInput, db?: Db): PriceResult {
+  const product = db ? (readProductBySlug(db, input.productSlug) ?? getProduct(input.productSlug)) : getProduct(input.productSlug);
   if (!product) return { ok: false, errors: { productSlug: 'Produit inconnu.' } };
   if (!product.shades.some((s) => s.code === input.shadeCode)) return { ok: false, errors: { shadeCode: 'Choisissez une teinte.' } };
   const wilaya = getWilaya(input.wilayaCode);

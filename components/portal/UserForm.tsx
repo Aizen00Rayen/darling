@@ -20,7 +20,7 @@ type Props = {
   managers?: { id: string; fullName: string }[];
 };
 
-const KNOWN_FIELDS = ['email', 'fullName', 'phone', 'role', 'permissions', 'isOwner', 'managerUserId'];
+const KNOWN_FIELDS = ['email', 'fullName', 'phone', 'role', 'permissions', 'isOwner', 'managerUserId', 'affiliateCode'];
 
 export function UserForm({ mode, meIsOwner, meId, user, managers = [] }: Props) {
   const router = useRouter();
@@ -31,6 +31,7 @@ export function UserForm({ mode, meIsOwner, meId, user, managers = [] }: Props) 
   const [isOwner, setIsOwner] = useState(user?.isOwner ?? false);
   const [permissions, setPermissions] = useState<Permission[]>(user?.permissions ?? []);
   const [managerId, setManagerId] = useState(user?.affiliate?.managerUserId ?? '');
+  const [affiliateCode, setAffiliateCode] = useState(user?.affiliate?.code ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -80,6 +81,7 @@ export function UserForm({ mode, meIsOwner, meId, user, managers = [] }: Props) 
         // Only a change is sent: the manager affects future orders only, and every change is audited.
         const current = user?.affiliate?.managerUserId ?? '';
         if (mode === 'create' ? managerId !== '' : managerId !== current) body.managerUserId = managerId === '' ? null : managerId;
+        if (mode === 'create' && affiliateCode.trim() !== '') body.affiliateCode = affiliateCode.trim().toUpperCase();
       }
       if (showPermissions) {
         // An owner's permissions are implicit: grants are sent only for someone who is not being made an owner.
@@ -194,6 +196,23 @@ export function UserForm({ mode, meIsOwner, meId, user, managers = [] }: Props) 
               </option>
             ))}
           </select>
+        </Field>
+      ) : null}
+
+      {role === 'affiliate' && mode === 'create' ? (
+        <Field
+          label="Code influenceuse (facultatif)"
+          error={fieldErrors.affiliateCode}
+          hint="3 lettres majuscules + au moins 3 chiffres (ex : AYA001). Laissez vide pour générer automatiquement à partir du nom."
+        >
+          <input
+            type="text"
+            name="affiliateCode"
+            autoComplete="off"
+            placeholder="ex : AYA001"
+            value={affiliateCode}
+            onChange={(e) => setAffiliateCode(e.target.value.toUpperCase())}
+          />
         </Field>
       ) : null}
 

@@ -33,7 +33,7 @@ describe('0001_identity schema', () => {
     const names = db
       .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
       .map((r) => r.name);
-    expect(names).toEqual(['_migrations', 'affiliate_clicks', 'affiliate_profiles', 'audit_log', 'auth_tokens', 'commission_adjustments', 'commissions', 'login_events', 'order_status_history', 'orders', 'payouts', 'sessions', 'settings', 'user_permissions', 'users']);
+    expect(names).toEqual(['_migrations', 'affiliate_clicks', 'affiliate_profiles', 'audit_log', 'auth_tokens', 'commission_adjustments', 'commissions', 'login_events', 'order_status_history', 'orders', 'payouts', 'products', 'sessions', 'settings', 'user_permissions', 'users']);
   });
 
   describe('users', () => {

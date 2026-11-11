@@ -22,6 +22,7 @@ export type Product = {
   /** Unit price in DA. */
   price: number;
   maxQuantity: number;
+  stock?: number;
   shades: Shade[];
   slides: Slide[];
   ingredients: string;
@@ -68,7 +69,7 @@ const shadeColors = ['#fdecdd', '#f79797', '#bc5938', '#ff0000'] as const;
 const wetKiss: Product = {
   slug: 'wet-kiss',
   name: 'Wet Kiss',
-  price: 3000,
+  price: 3300,
   maxQuantity: 20,
   shades: shadeCodes.map((n, i) => ({
     code: `*${n}`,

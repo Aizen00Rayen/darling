@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://darling7.store'),
   title: 'Darling — Wet Kiss · Lip Fondue',
   description:
-    'Wet Kiss par Darling. Une texture fondante, un fini glossy et quatre teintes à découvrir. 3 000 DA. Commandez en Algérie, paiement à la livraison.',
+    'Wet Kiss par Darling. Une texture fondante, un fini glossy et quatre teintes à découvrir. 3 300 DA. Commandez en Algérie, paiement à la livraison.',
   icons: { icon: '/assets/darling-logo.png' },
   openGraph: {
     title: 'Darling — Wet Kiss',

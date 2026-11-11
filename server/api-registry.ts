@@ -43,6 +43,8 @@ import * as userSuspend from '@/app/api/users/[id]/suspend/route';
 import * as userReactivate from '@/app/api/users/[id]/reactivate/route';
 import * as userResend from '@/app/api/users/[id]/resend-invite/route';
 import * as userRevoke from '@/app/api/users/[id]/revoke-sessions/route';
+import * as products from '@/app/api/products/route';
+import * as productById from '@/app/api/products/[id]/route';
 
 // Static table of EVERY route handler in app/api/**/route.ts. It lets server components call the API in-process
 // (callApi) with exactly the same pipeline as an HTTP request, and lets tests dispatch without a server.
@@ -111,6 +113,8 @@ export const ROUTES: readonly RegisteredRoute[] = [
   route('/api/users/:id/reactivate', userReactivate),
   route('/api/users/:id/resend-invite', userResend),
   route('/api/users/:id/revoke-sessions', userRevoke),
+  route('/api/products', products),
+  route('/api/products/:id', productById),
   route('/api/auth/login', login),
   route('/api/auth/logout', logout),
   route('/api/auth/me', me),

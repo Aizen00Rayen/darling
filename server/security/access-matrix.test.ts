@@ -53,6 +53,7 @@ const ORDERS_READ = { permission: 'orders.read' as const, verdicts: PERMISSION_R
 const ORDERS_WRITE = { permission: 'orders.write' as const, verdicts: PERMISSION_ROUTE };
 const COMMISSIONS = { permission: 'commissions.manage' as const, verdicts: PERMISSION_ROUTE };
 const PAYOUTS = { permission: 'payouts.manage' as const, verdicts: PERMISSION_ROUTE };
+const CATALOG = { permission: 'catalog.write' as const, verdicts: PERMISSION_ROUTE };
 // Role routes: only that role gets in (and a super manager still enrolling is told to enrol first), nobody else, not even owners.
 const ONLY_AFFILIATE: Verdict[] = ['U', 'ok', 'F', 'F', 'F', 'F', 'E'];
 const ONLY_SUB_MANAGER: Verdict[] = ['U', 'F', 'ok', 'F', 'F', 'F', 'E'];
@@ -95,6 +96,11 @@ const MATRIX: Row[] = [
   { route: '/api/users/:id/reactivate', method: 'POST', path: `/api/users/${UNKNOWN_ID}/reactivate`, ...USERS, allowed: [404] },
   { route: '/api/users/:id/resend-invite', method: 'POST', path: `/api/users/${UNKNOWN_ID}/resend-invite`, ...USERS, allowed: [404] },
   { route: '/api/users/:id/revoke-sessions', method: 'POST', path: `/api/users/${UNKNOWN_ID}/revoke-sessions`, ...USERS, allowed: [404] },
+  // catalog.write
+  { route: '/api/products', method: 'GET', verdicts: ALL_OK, allowed: [200] },
+  { route: '/api/products', method: 'POST', body: {}, ...CATALOG, allowed: [400] },
+  { route: '/api/products/:id', method: 'GET', path: `/api/products/${UNKNOWN_ID}`, verdicts: ALL_OK, allowed: [200, 404] },
+  { route: '/api/products/:id', method: 'PATCH', path: `/api/products/${UNKNOWN_ID}`, body: {}, ...CATALOG, allowed: [400, 404] },
   // audit.read
   { route: '/api/audit-log', method: 'GET', ...AUDIT, allowed: [200] },
   { route: '/api/login-events', method: 'GET', ...AUDIT, allowed: [200] },

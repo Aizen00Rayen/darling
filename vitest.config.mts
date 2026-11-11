@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 
 const alias = { '@': fileURLToPath(new URL('.', import.meta.url)) };
-const exclude = ['node_modules/**', '.next/**', 'deploy-check/**', 'reference/**', 'graphify-out/**', '.superpowers/**'];
+const exclude = ['node_modules/**', '.next/**', 'e2e/**', 'playwright-report/**', 'test-results/**', 'deploy-check/**', 'reference/**', 'graphify-out/**', '.superpowers/**'];
 
 export default defineConfig({
   test: {

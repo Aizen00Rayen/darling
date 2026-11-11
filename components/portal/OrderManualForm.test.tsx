@@ -38,15 +38,15 @@ describe('OrderManualForm', () => {
     const user = userEvent.setup();
     render(<OrderManualForm />);
     expect(totalText()).toContain('Choisissez une wilaya');
-    await user.selectOptions(screen.getByLabelText('Wilaya'), '16'); // Alger: desk 300, home 450, price 3000
+    await user.selectOptions(screen.getByLabelText('Wilaya'), '16'); // Alger: desk 300, home 450, price 3300
     expect(totalText()).toContain('300 DA');
-    expect(totalText()).toContain('3 300 DA');
+    expect(totalText()).toContain('3 600 DA');
     await user.clear(screen.getByLabelText('Quantité'));
     await user.type(screen.getByLabelText('Quantité'), '2');
-    expect(totalText()).toContain('6 300 DA');
+    expect(totalText()).toContain('39 900 DA');
     await user.click(screen.getByLabelText('À domicile'));
     expect(totalText()).toContain('450 DA');
-    expect(totalText()).toContain('6 450 DA');
+    expect(totalText()).toContain('40 050 DA');
   });
 
   it('disables Stop Desk where the wilaya has no desk service and forces home delivery', async () => {

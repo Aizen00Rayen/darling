@@ -89,6 +89,8 @@ export const createUserInput = z.object({
   isOwner: z.boolean().optional(),
   /** Influenceuses only: the sous-manager who manages her (must be active). */
   managerUserId: idField.nullable().optional(),
+  /** Influenceuses only: custom code (e.g. AYA001). If omitted or empty, auto-generated from name. */
+  affiliateCode: z.preprocess((v) => (v === null || v === '' ? undefined : v), z.string().trim().toUpperCase().regex(/^[A-Z]{3}\d{3,}$/, 'Le code doit comporter 3 lettres majuscules suivies d’au moins 3 chiffres (ex : AYA001).').optional()),
 });
 export type CreateUserInput = z.infer<typeof createUserInput>;
 

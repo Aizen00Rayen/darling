@@ -74,7 +74,12 @@ async function Content({ params, searchParams }: PageProps<'/admin/utilisateurs/
         title={user.fullName}
         actions={<Badge tone={statusTone(user.status)}>{statusLabel(user.status)}</Badge>}
       />
-      {created ? <Notice tone="success">Invitation envoyée à {user.email}.</Notice> : null}
+      {created ? <Notice tone="success">Compte créé pour {user.email}.</Notice> : null}
+      {user.status === 'invited' ? (
+        <Notice tone="info">
+          Ce compte est en attente d’activation. Vous pouvez cliquer sur <strong>« Renvoyer l’invitation »</strong> dans la section Actions ci-dessous pour générer et copier le lien direct à lui transmettre par WhatsApp ou email.
+        </Notice>
+      ) : null}
 
       <section className="p-card glass" aria-labelledby="d-info">
         <h2 className="p-card__title" id="d-info">

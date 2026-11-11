@@ -5,8 +5,9 @@ admin / manager / influenceuse portals, orders and commissions. One Next.js 16 a
 Launch design: [`docs/superpowers/specs/2026-11-11-lean-launch-design.md`](docs/superpowers/specs/2026-11-11-lean-launch-design.md),
 milestones: [`docs/superpowers/plans/2026-11-11-lean-launch.md`](docs/superpowers/plans/2026-11-11-lean-launch.md).
 
-Status: storefront, accounts (login, 2FA, invites, resets), user management, the audit and login journals and the
-settings screen work end to end. Orders and commissions arrive in the next milestones.
+Status: storefront and saved orders, accounts (login, 2FA, invites, resets), user management, influenceuse links with
+commissions and payouts, the admin / sous-manager / influenceuse portals, backups and owner diagnostics work end to end.
+Everything needed to put it on Hostinger is in [`docs/deploy-hostinger.md`](docs/deploy-hostinger.md).
 
 ## Run it
 
@@ -24,6 +25,8 @@ npm run dev                 # http://localhost:3000
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `next typegen` + `tsc --noEmit` |
 | `npm run build` / `npm start` | Production build / server (honours `PORT`) |
+| `npm run test:e2e` | Playwright scenarios in Chromium against a production build on port 3100 (throwaway data, see below) |
+| `npm run preflight` | Checklist of the production settings (never prints a secret; `-- --json` for machines; exit 1 on failure) |
 
 Dev mail: with `SMTP_URL` empty the invite/reset links are written to the server log (non-production only); or `docker compose -p darling -f infra/docker-compose.yml up -d` starts Mailpit (SMTP 1025, inbox http://localhost:8025).
 
@@ -76,18 +79,54 @@ changes the port. The seed refuses `NODE_ENV=production` and any database that a
 | `shared/` | Roles, permissions, DTO schemas, password and phone rules (imported as `@/shared`) |
 | `ui/` | Portal UI kit and styles (`@/ui`) |
 | `server/` | Server-only code: `db/` (SQLite adapter, migrations runner), `auth/`, `security/` (access rules, rate limits), `admin/` (users, journals, settings, first owner), `mail/`, `config.ts`, `log.ts`, `clock.ts`, `ids.ts`, `net/client-ip.ts` |
-| `scripts/` | Command-line tools (`create-owner.ts`, run with `tsx`) |
+| `scripts/` | Command-line tools run with `tsx`: `create-owner.ts`, `preflight.ts`, the demo seed |
+| `e2e/` | Playwright scenarios (`launch.spec.ts`) |
 | `migrations/` | Plain SQL migrations (`NNNN_name.sql`), applied on first database use |
 | `deploy-check/` | Tiny separate app to verify SQLite persistence on Hostinger |
 | `infra/` | `docker-compose.yml` (Mailpit only) |
 | `reference/` | Snapshot of the live site used for the storefront port |
-| `docs/` | Specs, plans, [`foundation.md`](docs/foundation.md) (superseded Postgres architecture) |
+| `docs/` | Specs, plans, [`deploy-hostinger.md`](docs/deploy-hostinger.md), [`operations.md`](docs/operations.md), [`foundation.md`](docs/foundation.md) (superseded Postgres architecture) |
 
 Storefront content lives in `data/products.ts`; the 58 wilayas and delivery rates in `data/delivery.ts`; totals and
-validation in `lib/pricing.ts` and `lib/order-schema.ts`. `app/api/orders/route.ts` is still an intake stub (stores nothing).
+validation in `lib/pricing.ts` and `lib/order-schema.ts`.
 
 ## Database
 
 SQLite file `<DATA_DIR>/darling.sqlite` (default `./.data` in development, git-ignored; production must point `DATA_DIR`
 outside the app directory). `node:sqlite` is used when available, `better-sqlite3` otherwise. Node prints no warning for
 it because the adapter filters the one ExperimentalWarning. Timestamps are epoch milliseconds, JSON is stored as text.
+
+## Deploy
+
+Hostinger (Business or Cloud, Node.js 22): **[`docs/deploy-hostinger.md`](docs/deploy-hostinger.md)** is the step-by-step guide
+for a non-developer: verify with `deploy-check/` that the SQLite file survives a redeploy, create the data folder outside the app,
+set the environment variables, create the owner on `/configuration`, enrol 2FA, check the visitor IP on **Diagnostic**, schedule
+the backup cron job, go live, update and restore. The daily/weekly routine is in [`docs/operations.md`](docs/operations.md).
+
+Environment variables for production (details and where to get each value in the guide):
+
+| Variable | Notes |
+| --- | --- |
+| `NODE_ENV=production`, `APP_ORIGIN` (https), `COOKIE_SECURE=true` | the app refuses to start otherwise |
+| `DATA_DIR` | folder OUTSIDE the app directory holding `darling.sqlite` and `backups/` |
+| `ENCRYPTION_KEY` | `openssl rand -base64 32` (32 bytes, base64) |
+| `TRUSTED_PROXY_HOPS` | `1` on Hostinger (confirm on `/admin/diagnostics`) |
+| `SETUP_TOKEN` | 32+ characters, only until the first owner exists, then remove it |
+| `CRON_TOKEN` | 32+ characters; enables `POST /api/cron/backup` (bearer token) |
+| `SMTP_URL`, `MAIL_FROM` | Hostinger mailbox: `smtps://user%40domain:password@smtp.hostinger.com:465` |
+| `BACKUP_KEEP` | optional, default 14 |
+| `MAIL_OUTBOX_DIR` | development and tests only; refused in production |
+
+Backups: `POST /api/backups` ("Sauvegarder maintenant" on the Diagnostic page), the cron line
+`curl -fsS -X POST -H "Authorization: Bearer $CRON_TOKEN" https://<domain>/api/cron/backup`, and the newest file downloadable
+by the owner (it contains personal data). Restore: stop the app, copy the chosen `backups/darling-*.sqlite` over
+`DATA_DIR/darling.sqlite`, delete `darling.sqlite-wal` and `darling.sqlite-shm`, start the app.
+
+## End-to-end tests
+
+`npm run test:e2e` builds the app (about 1.5 minutes), starts `next start` on port 3100 with `NODE_ENV=test` (the production
+guard rails refuse an http origin, so the server cannot use `production`; the build itself is a production build), a throwaway
+`DATA_DIR`, random secrets and a mail outbox directory, and runs `e2e/launch.spec.ts` in Chromium. The scenarios are SERIAL and
+build on each other (owner, then invitations, then the order...): run the whole file, never a single test. Set `E2E_SKIP_BUILD=1`
+to reuse the existing `.next` build while iterating. The Playwright version (1.64.0) matches the Chromium already cached in
+`~/.cache/ms-playwright`; elsewhere run `npx playwright install chromium`.

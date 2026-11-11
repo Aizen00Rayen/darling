@@ -51,6 +51,13 @@
 /* ---------- App shell ---------- */
 .dl-shell { min-height: 100vh; min-height: 100dvh; }
 .dl-brand { font-size: 26px; font-weight: 700; letter-spacing: -1.2px; color: var(--pink-ink); }
+.dl-brand::after {
+  content: ' ✦';
+  color: var(--pink);
+  font-size: 0.65em;
+  vertical-align: top;
+  margin-left: 2px;
+}
 
 .dl-topbar {
   position: sticky;
@@ -116,36 +123,51 @@
   width: min(86vw, 320px);
   padding: 24px var(--dl-gutter);
   overflow-y: auto;
-  background: var(--paper);
-  border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, #fff9fc 0%, #fff0f7 100%);
+  border-right: 1px solid rgba(232, 204, 217, 0.7);
   border-radius: 0 var(--dl-radius-lg) var(--dl-radius-lg) 0;
   transform: translateX(-102%);
   visibility: hidden;
   transition: transform .22s ease, visibility .22s;
+  box-shadow: 6px 0 32px rgba(121, 24, 84, 0.03);
 }
 .dl-sidebar[data-open='true'] { transform: none; visibility: visible; }
 
-.dl-nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.dl-sidebar__brand {
+  font-size: 28px;
+  letter-spacing: -1.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--pink-ink);
+}
+
+.dl-nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .dl-nav__link {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: var(--dl-radius-sm);
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 40px;
   font-size: 14px;
   font-weight: 600;
+  color: var(--ink);
+  transition: all .18s ease;
 }
-.dl-nav__link:hover { background: #ffffffb0; color: var(--pink-ink); }
-.dl-nav__link[aria-current='page'] { background: #fff; color: var(--pink-ink); box-shadow: inset 3px 0 0 var(--pink), 0 8px 24px #7918540c; }
+.dl-nav__link:hover { background: #ffffffd0; color: var(--pink-ink); transform: translateX(3px); }
+.dl-nav__link[aria-current='page'] { background: #fff; color: var(--pink-ink); box-shadow: inset 3px 0 0 var(--pink), 0 8px 24px rgba(237, 0, 125, 0.12); font-weight: 700; }
 .dl-nav__icon { display: inline-flex; width: 20px; height: 20px; }
 
 .dl-user {
   margin-top: auto;
   display: grid;
   gap: 4px;
-  padding: 16px;
+  padding: 16px 18px;
   border-radius: var(--dl-radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.5));
+  box-shadow: inset 1px 1px 0 #fff, 0 8px 24px rgba(121, 24, 84, 0.04);
 }
 .dl-user__name { font-weight: 700; font-size: 14px; overflow-wrap: anywhere; }
 .dl-user__logout { margin-top: 8px; background: none; border: 0; padding: 0; min-height: 44px; display: inline-flex; align-items: center; align-self: start; text-align: left; font-size: 13px; font-weight: 700; color: var(--pink-ink); text-decoration: underline; text-underline-offset: 3px; }

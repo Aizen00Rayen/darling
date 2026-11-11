@@ -3,7 +3,7 @@ import { defaultProduct, getProduct, products } from './products';
 
 describe('product data', () => {
   it('describes Wet Kiss', () => {
-    expect(defaultProduct).toMatchObject({ slug: 'wet-kiss', name: 'Wet Kiss', price: 3000, maxQuantity: 20 });
+    expect(defaultProduct).toMatchObject({ slug: 'wet-kiss', name: 'Wet Kiss', price: 3300, maxQuantity: 20 });
     expect(products).toContain(defaultProduct);
   });
 

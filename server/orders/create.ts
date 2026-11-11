@@ -57,7 +57,7 @@ function replay(tx: Db, key: string, phone: string): CreateResult | null {
  * (a rolled-back transaction gives its number back).
  */
 export function createOrder(deps: OrderDeps, input: OrderInput, options: CreateOptions): CreateResult {
-  const priced = priceOrder(input);
+  const priced = priceOrder(input, deps.db);
   if (!priced.ok) throw new HttpFailure(400, 'validation', priced.errors);
   const p = priced.priced;
   const key = options.idempotencyKey;

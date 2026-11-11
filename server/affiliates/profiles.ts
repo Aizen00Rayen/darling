@@ -58,9 +58,16 @@ export interface ProfileActor {
 }
 
 /** Creates the profile (code included) and its audit row; the manager, when given, must be an active sous-manager. */
-export function createProfile(tx: Db, actor: ProfileActor, user: { id: string; fullName: string }, managerUserId: string | null, now: number): string {
+export function createProfile(tx: Db, actor: ProfileActor, user: { id: string; fullName: string }, managerUserId: string | null, now: number, customCode?: string): string {
   if (managerUserId !== null) assertActiveSubManager(tx, managerUserId);
-  const code = nextAffiliateCode(tx, user.fullName);
+  let code: string;
+  if (customCode) {
+    const existing = tx.get('SELECT 1 FROM affiliate_profiles WHERE code = ?', customCode);
+    if (existing) throw validation({ affiliateCode: 'Ce code d’influenceuse est déjà utilisé.' });
+    code = customCode;
+  } else {
+    code = nextAffiliateCode(tx, user.fullName);
+  }
   tx.run('INSERT INTO affiliate_profiles (user_id, code, manager_user_id, created_at) VALUES (?, ?, ?, ?)', user.id, code, managerUserId, now);
   recordAudit(tx, {
     actorUserId: actor.userId,
