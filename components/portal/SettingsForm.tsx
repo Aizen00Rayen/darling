@@ -21,8 +21,8 @@ const KEYS = Object.keys(SETTINGS) as SettingKey[];
 type NumberSpec = { label: string; hint: string; min: number; max: number };
 /** French labels of the numeric settings (whole numbers, owner-only). */
 export const NUMBER_SETTINGS: Partial<Record<SettingKey, NumberSpec>> = {
-  'commission.affiliate_amount': { label: 'Commission de l’influenceuse (DA)', hint: 'Montant par commande livrée. Il est figé sur chaque commande à sa création : changer ce réglage ne touche que les prochaines commandes.', min: 0, max: 100_000 },
-  'commission.manager_amount': { label: 'Commission du sous-manager (DA)', hint: 'Montant par commande livrée de son équipe, figé lui aussi à la création de la commande.', min: 0, max: 100_000 },
+  'commission.affiliate_amount': { label: 'Commission de l’influenceuse (DA)', hint: 'Montant par article vendu dans chaque commande livrée (ex : 3 articles = 3 × ce montant). Figé à la création de la commande.', min: 0, max: 100_000 },
+  'commission.manager_amount': { label: 'Commission du sous-manager (DA)', hint: 'Montant par article vendu par son équipe dans chaque commande livrée.', min: 0, max: 100_000 },
   'attribution.window_days': { label: 'Durée d’attribution (jours)', hint: 'Une commande est attribuée à une influenceuse si le clic sur son lien date de moins de ce nombre de jours.', min: 1, max: 365 },
 };
 

@@ -61,8 +61,8 @@ export const placeOrder = (app: TestApp, cookie: string | undefined, over: Parti
   app.call('/api/orders', { cookie, body: { ...orderInput({ phone: freshPhone(), ...over }) } });
 
 /** Creates an order straight through the domain (no HTTP) with the given click and returns it. */
-export function makeOrder(app: TestApp, opts: { clickId?: string; phone?: string; affiliateCode?: string; createdBy?: string; source?: 'website' | 'instagram' } = {}) {
-  return createOrder(app, orderInput({ phone: opts.phone ?? freshPhone() }), {
+export function makeOrder(app: TestApp, opts: { clickId?: string; phone?: string; affiliateCode?: string; createdBy?: string; source?: 'website' | 'instagram'; quantity?: number } = {}) {
+  return createOrder(app, orderInput({ phone: opts.phone ?? freshPhone(), quantity: opts.quantity ?? 1 }), {
     source: opts.source ?? 'website',
     ...(opts.clickId ? { refClickId: opts.clickId } : {}),
     ...(opts.affiliateCode ? { affiliateCode: opts.affiliateCode } : {}),

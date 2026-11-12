@@ -23,7 +23,7 @@ describe('storefront attribution through the cookie', () => {
     const boss = await seedManager(app);
     const aya = await seedAffiliate(app, { managerId: boss.id });
     const cookie = await cookieFor(app, aya.code);
-    const res = await placeOrder(app, cookie);
+    const res = await placeOrder(app, cookie, { quantity: 1 });
     expect(res.status).toBe(200);
     const row = orderRow(await numberOf(res));
     expect(row).toMatchObject({ source: 'affiliate', affiliate_user_id: aya.id, manager_user_id: boss.id, self_referral: 0 });
@@ -33,6 +33,19 @@ describe('storefront attribution through the cookie', () => {
     expect(commissionsOf(app, row.id).map((c) => [c.kind, c.beneficiary_user_id, c.amount, c.status, c.on_hold])).toEqual([
       ['affiliate', aya.id, 300, 'pending', 0],
       ['manager', boss.id, 200, 'pending', 0],
+    ]);
+  });
+
+  it('multiplies commission by ordered item quantity (e.g. 3 items = 900 DA affiliate, 600 DA manager)', async () => {
+    const boss = await seedManager(app);
+    const aya = await seedAffiliate(app, { managerId: boss.id });
+    const cookie = await cookieFor(app, aya.code);
+    const res = await placeOrder(app, cookie, { quantity: 3 });
+    expect(res.status).toBe(200);
+    const row = orderRow(await numberOf(res));
+    expect(commissionsOf(app, row.id).map((c) => [c.kind, c.beneficiary_user_id, c.amount, c.status, c.on_hold])).toEqual([
+      ['affiliate', aya.id, 900, 'pending', 0],
+      ['manager', boss.id, 600, 'pending', 0],
     ]);
   });
 

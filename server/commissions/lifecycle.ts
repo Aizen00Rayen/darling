@@ -19,12 +19,15 @@ export interface CommissionOrder {
   managerUserId: string | null;
   /** Commissions are created on hold with this reason (null = not held). */
   holdReason: string | null;
+  /** Number of items ordered. Commissions are multiplied per item (e.g. 3 items = 3 x 300 DA = 900 DA). */
+  quantity?: number;
 }
 
 /** Creates the `pending` commissions of a freshly inserted, attributed order: the influenceuse's and her manager's. */
 export function createCommissions(tx: Db, clock: Pick<Clock, 'now'>, order: CommissionOrder, now: number): void {
   const hold = order.holdReason !== null;
-  const insert = (kind: 'affiliate' | 'manager', beneficiary: string, amount: number) =>
+  const quantity = Math.max(1, order.quantity ?? tx.get<{ quantity: number }>('SELECT quantity FROM orders WHERE id = ?', order.id)?.quantity ?? 1);
+  const insert = (kind: 'affiliate' | 'manager', beneficiary: string, unitAmount: number) =>
     tx.run(
       `INSERT INTO commissions (id, order_id, beneficiary_user_id, kind, amount, status, on_hold, hold_reason, created_at)
        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
@@ -32,7 +35,7 @@ export function createCommissions(tx: Db, clock: Pick<Clock, 'now'>, order: Comm
       order.id,
       beneficiary,
       kind,
-      amount,
+      unitAmount * quantity,
       hold,
       order.holdReason,
       now,

@@ -26,8 +26,8 @@ const get = async (cookie: string | undefined, url: string) => {
 const json = (r: { text: string }) => JSON.parse(r.text);
 
 /** A customer with distinctive private details, ordering through `clickId`. */
-function privateOrder(clickId: string, over: { phone?: string; fullName?: string; address?: string } = {}) {
-  const order = createOrder(app, orderInput({ fullName: over.fullName ?? 'Fatima Zohra Belkacemi', phone: over.phone ?? '0771234567', mode: 'home', address: over.address ?? '12 rue des Orangers Secretville', wilayaCode: 31, commune: 'Bir El Djir' }), {
+function privateOrder(clickId: string, over: { phone?: string; fullName?: string; address?: string; quantity?: number } = {}) {
+  const order = createOrder(app, orderInput({ quantity: over.quantity ?? 1, fullName: over.fullName ?? 'Fatima Zohra Belkacemi', phone: over.phone ?? '0771234567', mode: 'home', address: over.address ?? '12 rue des Orangers Secretville', wilayaCode: 31, commune: 'Bir El Djir' }), {
     source: 'website',
     refClickId: clickId,
   }).order;
@@ -69,7 +69,7 @@ describe('GET /api/me/affiliate', () => {
       paidTotal: 300,
     });
     expect(body.orders.map((o: { customer: string }) => o.customer).sort()).toEqual(['Fatima B.', 'Nadia']);
-    expect(body.orders[0]).toEqual({ ref: expect.stringMatching(/^#\d+$/), createdAt: expect.any(String), status: expect.any(String), productName: 'Wet Kiss', quantity: 2, total: expect.any(Number), wilayaName: 'Oran', customer: expect.any(String) });
+    expect(body.orders[0]).toEqual({ ref: expect.stringMatching(/^#\d+$/), createdAt: expect.any(String), status: expect.any(String), productName: 'Wet Kiss', quantity: 1, total: expect.any(Number), wilayaName: 'Oran', customer: expect.any(String) });
     expect(body.commissions).toHaveLength(2);
     expect(body.commissions.map((c: { status: string }) => c.status).sort()).toEqual(['paid', 'pending']);
     expect(body.payouts).toEqual([{ id: expect.any(String), amount: 300, method: 'baridimob', reference: 'BM-1', paidAt: expect.any(String) }]);

@@ -40,7 +40,7 @@ async function Content() {
   return (
     <div className="p-stack p-stack--lg">
       {header}
-      <p className="p-lead">Le suivi de votre équipe d’influenceuses et vos propres commissions (une commission par commande livrée de votre équipe).</p>
+      <p className="p-lead">Le suivi de votre équipe d’influenceuses et vos propres commissions (par article livré par votre équipe).</p>
 
       <section className="p-stack" aria-labelledby="m-stats">
         <h2 className="p-section-title" id="m-stats">
