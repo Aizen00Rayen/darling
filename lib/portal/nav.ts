@@ -11,6 +11,7 @@ const ADMIN_PAGES: { item: NavItem; permission: Permission }[] = [
   { item: { href: '/admin/commandes', label: 'Commandes' }, permission: 'orders.read' },
   { item: { href: '/admin/produits', label: 'Produits' }, permission: 'catalog.write' },
   { item: { href: '/admin/stock', label: 'Stock' }, permission: 'stock.write' },
+  { item: { href: '/admin/rapports', label: 'Rapports' }, permission: 'finance.read' },
   { item: { href: '/admin/influenceuses', label: 'Influenceuses' }, permission: 'commissions.manage' },
   { item: { href: '/admin/commissions', label: 'Commissions' }, permission: 'commissions.manage' },
   { item: { href: '/admin/utilisateurs', label: 'Utilisateurs' }, permission: 'users.manage' },

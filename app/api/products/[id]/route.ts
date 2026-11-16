@@ -1,11 +1,12 @@
 import { productInputSchema } from '@/shared/products';
 import { notFound, respond } from '@/server/admin/errors';
-import { readProductById, updateProduct } from '@/server/products/db';
-import { json, parseBody, withAccess } from '@/server/security/access';
+import { deleteProduct, readProductById, updateProduct } from '@/server/products/db';
+import { json, noContent, parseBody, withAccess } from '@/server/security/access';
 
 export const access = {
   GET: { kind: 'public' },
   PATCH: { kind: 'permission', permission: 'catalog.write' },
+  DELETE: { kind: 'permission', permission: 'catalog.write' },
 } as const;
 
 export const GET = withAccess(access.GET, async ({ params, ctx }) => {
@@ -26,5 +27,14 @@ export const PATCH = withAccess(access.PATCH, async ({ params, request, ctx, aut
     const actor = { userId: auth.userId, ip, requestId };
     const updated = updateProduct(ctx.db, actor, id, body.data, ctx.clock.now());
     return json(200, updated);
+  });
+});
+
+/** Hides a product from the shop and the admin lists (its stock ledger and past orders are kept). */
+export const DELETE = withAccess(access.DELETE, async ({ params, ctx, auth, ip, requestId }) => {
+  const { id } = await params;
+  return respond(() => {
+    deleteProduct(ctx.db, { userId: auth.userId, ip, requestId }, id, ctx.clock.now());
+    return noContent();
   });
 });

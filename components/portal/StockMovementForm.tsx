@@ -17,7 +17,7 @@ const ACTIONS: { value: Action; label: string }[] = [
   { value: 'adjustment', label: 'Correction d’inventaire' },
 ];
 
-export function StockMovementForm({ products }: { products: StockProduct[] }) {
+export function StockMovementForm({ products, canCost = false }: { products: StockProduct[]; canCost?: boolean }) {
   const router = useRouter();
   const [productId, setProductId] = useState(products[0]?.id ?? '');
   const [shadeCode, setShadeCode] = useState('');
@@ -139,9 +139,9 @@ export function StockMovementForm({ products }: { products: StockProduct[] }) {
             </select>
           </Field>
         ) : null}
-        {action === 'sale_offsite' || action === 'purchase' ? (
+        {action === 'sale_offsite' || (action === 'purchase' && canCost) ? (
           <Field
-            label={action === 'purchase' ? 'Coût unitaire (DA, optionnel)' : 'Prix de vente unitaire (DA, optionnel)'}
+            label={action === 'purchase' ? 'Prix d’achat unitaire (DA) — met à jour le coût moyen' : 'Prix de vente unitaire (DA, optionnel)'}
             {...(fieldErrors.unitPrice ? { error: fieldErrors.unitPrice } : {})}
           >
             <input type="number" min={0} step={1} inputMode="numeric" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />

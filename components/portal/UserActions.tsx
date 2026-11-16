@@ -9,7 +9,7 @@ import { apiMessage } from '@/lib/portal/messages';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CopyField } from './CopyField';
 
-type ActionKey = 'suspend' | 'reactivate' | 'resend-invite' | 'revoke-sessions';
+type ActionKey = 'suspend' | 'reactivate' | 'resend-invite' | 'revoke-sessions' | 'delete';
 
 type Spec = {
   title: string;
@@ -43,6 +43,14 @@ const SPECS: Record<ActionKey, Spec> = {
     description: 'Un nouveau lien d’invitation sera envoyé et l’ancien cessera de fonctionner.',
     success: (u) => `Invitation renvoyée à ${u.email}.`,
   },
+  delete: {
+    title: 'Supprimer ce compte ?',
+    confirm: 'Supprimer',
+    tone: 'danger',
+    description: 'Le compte disparaît des listes, ne pourra plus se connecter et ses sessions sont fermées. Son historique (commandes, commissions, journal) est conservé.',
+    success: () => 'Compte supprimé.',
+    reason: true,
+  },
   'revoke-sessions': {
     title: 'Révoquer les sessions ?',
     confirm: 'Révoquer',
@@ -74,6 +82,7 @@ export function UserActions({ user, meId, meIsOwner }: Props) {
   if (user.status === 'suspended') available.push('reactivate');
   if (user.status === 'invited') available.push('resend-invite');
   if (user.status === 'active' || user.status === 'suspended') available.push('revoke-sessions');
+  if (!isSelf && user.status !== 'deactivated') available.push('delete');
 
   function open(action: ActionKey) {
     setError(null);
@@ -102,6 +111,9 @@ export function UserActions({ user, meId, meIsOwner }: Props) {
     } else {
       setDone(spec.success(user));
     }
+    if (action === 'delete') {
+      router.push('/admin/utilisateurs');
+    }
     router.refresh();
   }
 
@@ -123,7 +135,7 @@ export function UserActions({ user, meId, meIsOwner }: Props) {
         <div className="p-actions">
           {available.map((action) => (
             <Button key={action} variant={SPECS[action].tone === 'danger' ? 'danger' : 'ghost'} onClick={() => open(action)}>
-              {{ suspend: 'Suspendre', reactivate: 'Réactiver', 'resend-invite': 'Renvoyer l’invitation', 'revoke-sessions': 'Révoquer les sessions' }[action]}
+              {{ suspend: 'Suspendre', reactivate: 'Réactiver', 'resend-invite': 'Renvoyer l’invitation', 'revoke-sessions': 'Révoquer les sessions', delete: 'Supprimer le compte' }[action]}
             </Button>
           ))}
         </div>

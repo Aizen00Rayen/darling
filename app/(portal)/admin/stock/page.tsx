@@ -2,7 +2,11 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { PageLoading } from '@/components/portal/PageLoading';
 import { AccessDenied } from '@/components/portal/AccessDenied';
+import { CostEditor } from '@/components/portal/CostEditor';
+import { DeleteProductButton } from '@/components/portal/DeleteProductButton';
 import { StockMovementForm } from '@/components/portal/StockMovementForm';
+import { formatMoney } from '@/lib/pricing';
+import '@/components/portal/dash/dashboard.css';
 import { Badge, PageHeader, Table } from '@/ui';
 import { requireAdmin } from '@/lib/portal/guards';
 import { formatDateTime } from '@/lib/portal/format';
@@ -30,7 +34,9 @@ async function Content() {
   if (!me.permissions.includes('stock.write')) return <AccessDenied />;
 
   const ctx = getServerContext();
-  const products = readOverview(ctx.db);
+  const finance = me.permissions.includes('finance.read');
+  const products = readOverview(ctx.db, { withCost: finance });
+  const value = finance ? products.reduce((n, p) => n + p.total * (p.costPrice ?? 0), 0) : 0;
   const movements = listMovements(ctx.db, { limit: 60 });
   const units = products.reduce((n, p) => n + p.total, 0);
   const low = products.filter((p) => p.total > 0 && p.total <= p.lowStockThreshold).length;
@@ -45,11 +51,12 @@ async function Content() {
         et ne peut plus être modifiée. Les commandes annulées, refusées ou retournées remettent automatiquement le stock.
       </p>
 
-      <div className="p-grid p-grid--4" role="list" aria-label="Indicateurs de stock">
-        <div role="listitem"><strong>{units}</strong><div className="p-subtle">unités en stock</div></div>
-        <div role="listitem"><strong>{low}</strong><div className="p-subtle">produits bientôt épuisés</div></div>
-        <div role="listitem"><strong>{out}</strong><div className="p-subtle">produits épuisés</div></div>
-        <div role="listitem"><strong>{offsite}</strong><div className="p-subtle">unités vendues hors site</div></div>
+      <div className="dd-grid4" role="list" aria-label="Indicateurs de stock">
+        <div className="dd-card" role="listitem"><div className="dd-card__label">Unités en stock</div><div className="dd-card__val">{units}</div></div>
+        <div className={`dd-card ${low > 0 ? 'dd-card--urgent' : ''}`} role="listitem"><div className="dd-card__label">Bientôt épuisés</div><div className="dd-card__val">{low}</div></div>
+        <div className="dd-card" role="listitem"><div className="dd-card__label">Épuisés</div><div className="dd-card__val">{out}</div></div>
+        <div className="dd-card" role="listitem"><div className="dd-card__label">Vendues hors site</div><div className="dd-card__val">{offsite}</div></div>
+        {finance ? <div className="dd-card dd-card--good" role="listitem"><div className="dd-card__label">Valeur du stock (achat)</div><div className="dd-card__val">{formatMoney(value)}</div></div> : null}
       </div>
 
       <Table<StockProduct>
@@ -78,14 +85,30 @@ async function Content() {
               </div>
             ),
           },
-          { key: 'web', header: 'Vendu (site)', hideBelow: 'sm', render: (p) => p.soldWebsite },
-          { key: 'off', header: 'Vendu (hors site)', hideBelow: 'sm', render: (p) => p.soldOffsite },
+          ...(finance
+            ? [
+                { key: 'price', header: 'Prix de vente', hideBelow: 'sm' as const, render: (p: StockProduct) => formatMoney(p.price) },
+                { key: 'cost', header: 'Prix d’achat', render: (p: StockProduct) => <CostEditor productId={p.id} value={p.costPrice ?? 0} /> },
+                {
+                  key: 'margin',
+                  header: 'Marge / unité',
+                  render: (p: StockProduct) => {
+                    const m = p.price - (p.costPrice ?? 0);
+                    return <strong style={{ color: m >= 0 ? 'var(--success-ink)' : 'var(--danger)' }}>{formatMoney(m)}</strong>;
+                  },
+                },
+              ]
+            : []),
+          { key: 'sold', header: 'Vendu site / hors site', hideBelow: 'sm', render: (p) => `${p.soldWebsite} / ${p.soldOffsite}` },
+          ...(me.permissions.includes('catalog.write')
+            ? [{ key: 'del', header: '', render: (p: StockProduct) => <DeleteProductButton id={p.id} name={p.name} /> }]
+            : []),
         ]}
       />
 
-      <section aria-labelledby="mv-form">
+      <section aria-labelledby="mv-form" id="mouvement">
         <h2 id="mv-form">Enregistrer un mouvement</h2>
-        <StockMovementForm products={products} />
+        <StockMovementForm products={products} canCost={finance} />
       </section>
 
       <section aria-labelledby="mv-hist">

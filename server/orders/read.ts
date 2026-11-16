@@ -115,6 +115,6 @@ export function readDetail(db: Db, id: string): OrderDetail | null {
 export function getOrder(db: Db, id: string): OrderDetail {
   assertOrderId(id);
   const detail = readDetail(db, id);
-  if (!detail) throw notFound();
+  if (!detail || db.get('SELECT 1 AS x FROM orders WHERE id = ? AND deleted_at IS NOT NULL', id)) throw notFound();
   return detail;
 }

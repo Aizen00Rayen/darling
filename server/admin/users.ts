@@ -181,6 +181,9 @@ export function listUsers(db: Db, filter: ListFilter): { items: User[]; total: n
   if (filter.status) {
     where.push('status = :status');
     params.status = filter.status;
+  } else {
+    // Deleted (deactivated) accounts are hidden unless asked for.
+    where.push("status <> 'deactivated'");
   }
   const term = filter.q?.trim();
   if (term) {
@@ -397,6 +400,19 @@ export function suspendUser(deps: UsersDeps, actor: Actor, id: string, input: Ac
     tx.run("UPDATE users SET status = 'suspended', updated_at = ? WHERE id = ?", now, target.id);
     revokeUserSessions(tx, target.id, undefined, now);
     auditStatusChange(tx, actor, 'user.suspended', target, readUser(tx, target.id) as Row, grants, input.reason, now);
+  });
+}
+
+/** Deletes an account: it is deactivated (never reactivated), loses every session and disappears from the lists. Its history stays. */
+export function deleteUser(deps: UsersDeps, actor: Actor, id: string, input: ActionInput): void {
+  mutate(deps, actor, id, (tx, { target, grants, owners, now, self }) => {
+    if (target.id === actor.userId) throw new HttpFailure(409, 'cannot_suspend_self');
+    requireOwnerFor(target, self);
+    if (target.status === 'deactivated') return;
+    assertNotLastOwner(owners, target);
+    tx.run("UPDATE users SET status = 'deactivated', updated_at = ? WHERE id = ?", now, target.id);
+    revokeUserSessions(tx, target.id, undefined, now);
+    auditStatusChange(tx, actor, 'user.deleted', target, readUser(tx, target.id) as Row, grants, input.reason, now);
   });
 }
 

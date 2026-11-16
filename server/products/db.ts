@@ -21,6 +21,8 @@ interface ProductRow {
   stock: number;
   max_quantity: number;
   low_stock_threshold: number;
+  cost_price: number;
+  deleted_at: number | null;
   is_active: number;
   is_default: number;
   data: string;
@@ -103,13 +105,13 @@ function rowToSummary(row: ProductRow): ProductSummary {
 
 export function listProducts(db: Db): ProductSummary[] {
   ensureDefaultProduct(db);
-  const rows = db.all<ProductRow>('SELECT * FROM products ORDER BY is_default DESC, created_at DESC');
+  const rows = db.all<ProductRow>('SELECT * FROM products WHERE deleted_at IS NULL ORDER BY is_default DESC, created_at DESC');
   return rows.map(rowToSummary);
 }
 
 export function readProductBySlug(db: Db, slug: string): Product | null {
   ensureDefaultProduct(db);
-  const row = db.get<ProductRow>('SELECT * FROM products WHERE slug = ?', slug);
+  const row = db.get<ProductRow>('SELECT * FROM products WHERE slug = ? AND deleted_at IS NULL', slug);
   if (row) return rowToProduct(row);
   if (slug === defaultProduct.slug) return defaultProduct;
   return null;
@@ -117,7 +119,7 @@ export function readProductBySlug(db: Db, slug: string): Product | null {
 
 export function readProductById(db: Db, id: string): { product: Product; summary: ProductSummary } | null {
   ensureDefaultProduct(db);
-  const row = db.get<ProductRow>('SELECT * FROM products WHERE id = ?', id);
+  const row = db.get<ProductRow>('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL', id);
   if (!row) return null;
   return { product: rowToProduct(row), summary: rowToSummary(row) };
 }
@@ -171,7 +173,7 @@ export function createProduct(db: Db, actor: ProductActor, input: ProductInput, 
 
 export function updateProduct(db: Db, actor: ProductActor, id: string, input: Partial<ProductInput>, now: number): ProductSummary {
   ensureDefaultProduct(db);
-  const existing = db.get<ProductRow>('SELECT * FROM products WHERE id = ?', id);
+  const existing = db.get<ProductRow>('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL', id);
   if (!existing) throw notFound();
 
   let mergedData: ProductInput;
@@ -228,4 +230,24 @@ export function updateProduct(db: Db, actor: ProductActor, id: string, input: Pa
 
   const row = db.get<ProductRow>('SELECT * FROM products WHERE id = ?', id);
   return rowToSummary(row!);
+}
+
+/** Hides a product from the shop and the admin lists. Its ledger and past orders stay. The default product cannot be deleted. */
+export function deleteProduct(db: Db, actor: ProductActor, id: string, now: number): void {
+  const row = db.get<ProductRow>('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL', id);
+  if (!row) throw notFound();
+  if (row.is_default === 1) throw validation({ product: 'Le produit par défaut ne peut pas être supprimé.' });
+  // The slug is freed so the same address can be reused later.
+  const freed = `supprime-${id.slice(-8).toLowerCase().replace(/[^a-z0-9]/g, '')}-${row.slug}`.slice(0, 80);
+  db.run('UPDATE products SET deleted_at = ?, is_active = 0, slug = ?, updated_at = ? WHERE id = ?', now, freed, now, id);
+  recordAudit(db, {
+    actorUserId: actor.userId,
+    action: 'product.deleted',
+    entityType: 'product',
+    entityId: id,
+    before: { slug: row.slug, name: row.name, stock: row.stock },
+    ip: actor.ip,
+    requestId: actor.requestId,
+    at: now,
+  });
 }

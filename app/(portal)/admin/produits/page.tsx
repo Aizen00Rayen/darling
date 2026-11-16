@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Badge, Notice, PageHeader, Table } from '@/ui';
 import { AccessDenied } from '@/components/portal/AccessDenied';
+import { DeleteProductButton } from '@/components/portal/DeleteProductButton';
 import { requireAdmin } from '@/lib/portal/guards';
 import { formatMoney } from '@/lib/pricing';
 import { getServerContext } from '@/server/context';
@@ -113,6 +114,7 @@ async function Content({ searchParams }: PageProps<'/admin/produits'>) {
                 >
                   Voir la page ↗
                 </a>
+                <DeleteProductButton id={p.id} name={p.name} disabled={p.isDefault} />
               </div>
             ),
           },

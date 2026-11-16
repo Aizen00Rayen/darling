@@ -27,7 +27,7 @@ function escapeLike(term: string): string {
  * LIKE is case-insensitive for ASCII letters only (accented capitals do not fold).
  */
 export function listOrders(db: Db, filter: OrderFilter): { items: OrderListItem[]; total: number } {
-  const where: string[] = [];
+  const where: string[] = ['o.deleted_at IS NULL'];
   const params: Record<string, Scalar> = {};
   if (filter.status) {
     where.push('o.status = :status');
@@ -82,10 +82,10 @@ export function listOrders(db: Db, filter: OrderFilter): { items: OrderListItem[
 /** Counts for the dashboard: per status, created during the Algiers day `nowMs` falls in, and still `new`. */
 export function orderStats(db: Db, nowMs: number): OrderStats {
   const byStatus = Object.fromEntries(ORDER_STATUSES.map((s) => [s, 0])) as Record<OrderStatus, number>;
-  for (const r of db.all<{ status: string; n: number }>('SELECT status, count(*) AS n FROM orders GROUP BY status')) {
+  for (const r of db.all<{ status: string; n: number }>('SELECT status, count(*) AS n FROM orders WHERE deleted_at IS NULL GROUP BY status')) {
     if ((ORDER_STATUSES as readonly string[]).includes(r.status)) byStatus[r.status as OrderStatus] = r.n;
   }
   const day = algiersDayBounds(algiersDateString(nowMs));
-  const today = day ? (db.get<{ n: number }>('SELECT count(*) AS n FROM orders WHERE created_at >= ? AND created_at < ?', day.start, day.endExclusive)?.n ?? 0) : 0;
+  const today = day ? (db.get<{ n: number }>('SELECT count(*) AS n FROM orders WHERE deleted_at IS NULL AND created_at >= ? AND created_at < ?', day.start, day.endExclusive)?.n ?? 0) : 0;
   return { byStatus, total: ORDER_STATUSES.reduce((sum, s) => sum + byStatus[s], 0), today, toProcess: byStatus.new };
 }

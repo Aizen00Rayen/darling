@@ -7,7 +7,7 @@ import type { Db } from '../db/sqlite';
 import { newId } from '../ids';
 import { algiersYear2 } from '../util/algiers';
 import { createCommissions } from '../commissions/lifecycle';
-import { consumeForOrder } from '../inventory/stock';
+import { consumeForOrder, unitCostForSlug } from '../inventory/stock';
 import { authoriseOrdersWrite } from './authorise';
 import { attributeByCode, resolveAttribution } from './attribution';
 import { idempotencyConflict } from './errors';
@@ -91,10 +91,10 @@ export function createOrder(deps: OrderDeps, input: OrderInput, options: CreateO
 
       tx.run(
         `INSERT INTO orders (seq, id, number, idempotency_key, status, source, customer_name, phone, wilaya_code, wilaya_name, commune, address,
-                             delivery_mode, product_slug, product_name, shade_code, quantity, unit_price, delivery_fee, total,
+                             delivery_mode, product_slug, product_name, shade_code, quantity, unit_price, unit_cost, delivery_fee, total,
                              created_by, created_at, updated_at, affiliate_user_id, manager_user_id, attribution_click_id, self_referral)
          VALUES (:seq, :id, :number, :key, 'new', :source, :name, :phone, :wilayaCode, :wilayaName, :commune, :address,
-                 :mode, :slug, :productName, :shade, :quantity, :unitPrice, :fee, :total, :createdBy, :now, :now,
+                 :mode, :slug, :productName, :shade, :quantity, :unitPrice, :unitCost, :fee, :total, :createdBy, :now, :now,
                  :affiliate, :manager, :click, :selfReferral)`,
         {
           seq,
@@ -114,6 +114,7 @@ export function createOrder(deps: OrderDeps, input: OrderInput, options: CreateO
           shade: input.shadeCode,
           quantity: input.quantity,
           unitPrice: p.unitPrice,
+          unitCost: unitCostForSlug(tx, input.productSlug),
           fee: p.deliveryFee,
           total: p.total,
           createdBy: options.createdBy ?? null,

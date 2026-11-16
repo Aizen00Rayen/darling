@@ -6,7 +6,11 @@ import { Badge, Notice, PageHeader } from '@/ui';
 import type { OrderDetail } from '@/shared';
 import { AccessDenied } from '@/components/portal/AccessDenied';
 import { OrderActions } from '@/components/portal/OrderActions';
+import { OrderEditPanel } from '@/components/portal/OrderEditPanel';
 import { OrderNotesForm } from '@/components/portal/OrderNotesForm';
+import { wilayas } from '@/data/delivery';
+import { getServerContext } from '@/server/context';
+import { readProductBySlug } from '@/server/products/db';
 import { apiServer } from '@/lib/api/server';
 import { formatDateTime } from '@/lib/portal/format';
 import { commissionKindLabel, commissionStatusLabel, commissionStatusTone } from '@/lib/portal/commissions';
@@ -82,6 +86,14 @@ async function Content({ params, searchParams }: PageProps<'/admin/commandes/[id
         }
       />
       {created ? <Notice tone="success">Commande enregistrée.</Notice> : null}
+
+      {canWrite ? (
+        <OrderEditPanel
+          order={{ id: order.id, number: order.number, customerName: order.customerName, phone: order.phone, wilayaCode: order.wilayaCode, commune: order.commune, deliveryMode: order.deliveryMode, address: order.address, shadeCode: order.shadeCode, quantity: order.quantity, unitPrice: order.unitPrice, deliveryFee: order.deliveryFee }}
+          shades={(readProductBySlug(getServerContext().db, order.productSlug)?.shades.map((sh) => sh.code)) ?? [order.shadeCode]}
+          wilayas={wilayas.map((w) => ({ code: w.code, name: w.name }))}
+        />
+      ) : null}
 
       <section className="p-card glass" aria-labelledby="o-customer">
         <h2 className="p-card__title" id="o-customer">

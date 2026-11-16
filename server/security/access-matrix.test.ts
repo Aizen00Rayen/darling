@@ -53,6 +53,7 @@ const ORDERS_READ = { permission: 'orders.read' as const, verdicts: PERMISSION_R
 const ORDERS_WRITE = { permission: 'orders.write' as const, verdicts: PERMISSION_ROUTE };
 const COMMISSIONS = { permission: 'commissions.manage' as const, verdicts: PERMISSION_ROUTE };
 const PAYOUTS = { permission: 'payouts.manage' as const, verdicts: PERMISSION_ROUTE };
+const FINANCE = { permission: 'finance.read' as const, verdicts: PERMISSION_ROUTE };
 const STOCK = { permission: 'stock.write' as const, verdicts: PERMISSION_ROUTE };
 const CATALOG = { permission: 'catalog.write' as const, verdicts: PERMISSION_ROUTE };
 // Role routes: only that role gets in (and a super manager still enrolling is told to enrol first), nobody else, not even owners.
@@ -99,6 +100,12 @@ const MATRIX: Row[] = [
   { route: '/api/users/:id/revoke-sessions', method: 'POST', path: `/api/users/${UNKNOWN_ID}/revoke-sessions`, ...USERS, allowed: [404] },
   // catalog.write
   { route: '/api/stock', method: 'GET', ...STOCK, allowed: [200] },
+  { route: '/api/stock/cost', method: 'POST', body: {}, ...FINANCE, allowed: [400] },
+  { route: '/api/reports/export', method: 'GET', ...FINANCE, allowed: [200] },
+  { route: '/api/orders/:id/edit', method: 'PATCH', path: `/api/orders/${UNKNOWN_ID}/edit`, body: {}, ...ORDERS_WRITE, allowed: [400, 404] },
+  { route: '/api/orders/:id', method: 'DELETE', path: `/api/orders/${UNKNOWN_ID}`, ...ORDERS_WRITE, allowed: [204, 404] },
+  { route: '/api/products/:id', method: 'DELETE', path: `/api/products/${UNKNOWN_ID}`, ...CATALOG, allowed: [204, 404] },
+  { route: '/api/users/:id/delete', method: 'POST', path: `/api/users/${UNKNOWN_ID}/delete`, ...USERS, allowed: [204, 404] },
   { route: '/api/stock/movements', method: 'GET', ...STOCK, allowed: [200] },
   { route: '/api/stock/movements', method: 'POST', body: {}, ...STOCK, allowed: [400] },
   { route: '/api/products', method: 'GET', verdicts: ALL_OK, allowed: [200] },

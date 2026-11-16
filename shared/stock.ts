@@ -61,6 +61,10 @@ export interface StockProduct {
   slug: string;
   name: string;
   total: number;
+  /** Selling price per unit (public). */
+  price: number;
+  /** Real purchase cost per unit. Only filled for users who may see finances, else null. */
+  costPrice: number | null;
   lowStockThreshold: number;
   isActive: boolean;
   shades: ShadeLevel[];

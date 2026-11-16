@@ -19,6 +19,7 @@ interface Movement {
   channel?: string | null;
   orderId?: string | null;
   unitPrice?: number | null;
+  unitCost?: number | null;
   note?: string | null;
   actorUserId?: string | null;
   at: number;
@@ -33,11 +34,38 @@ export function authoriseStockWrite(tx: Db, userId: string): void {
   if (!grant) throw forbidden();
 }
 
+/** Re-checks that the actor is an active super manager who is an owner or holds `finance.read` (costs and profits). */
+export function authoriseFinance(tx: Db, userId: string): void {
+  const self = tx.get<{ status: string; role: string; is_owner: number }>('SELECT status, role, is_owner FROM users WHERE id = ?', userId);
+  if (!self || self.status !== 'active' || self.role !== 'super_manager') throw forbidden();
+  if (self.is_owner === 1) return;
+  if (!tx.get("SELECT 1 AS ok FROM user_permissions WHERE user_id = ? AND permission = 'finance.read'", userId)) throw forbidden();
+}
+
+/** The purchase cost per unit of a product (0 when none is known), used to snapshot an order's cost. */
+export function unitCostForSlug(tx: Db, slug: string): number {
+  return tx.get<{ c: number }>('SELECT cost_price AS c FROM products WHERE slug = ? AND deleted_at IS NULL', slug)?.c ?? 0;
+}
+
+/** Sets a product's purchase cost by hand. */
+export function setCostPrice(db: Db, actor: StockActor, productId: string, costPrice: number, now: number): void {
+  if (!Number.isInteger(costPrice) || costPrice < 0 || costPrice > 100_000_000) throw validation({ costPrice: 'Prix d’achat invalide (dinars, entier).' });
+  db.transaction((tx) => {
+    authoriseFinance(tx, actor.userId);
+    const before = tx.get<{ c: number; slug: string }>('SELECT cost_price AS c, slug FROM products WHERE id = ? AND deleted_at IS NULL', productId);
+    if (!before) throw notFound();
+    tx.run('UPDATE products SET cost_price = ?, updated_at = ? WHERE id = ?', costPrice, now, productId);
+    // Orders created before any cost was known carry 0: they take the cost now, so past profits are not overstated.
+    if (costPrice > 0) tx.run('UPDATE orders SET unit_cost = ? WHERE product_slug = ? AND unit_cost = 0', costPrice, before.slug);
+    recordAudit(tx, { actorUserId: actor.userId, action: 'product.cost_changed', entityType: 'product', entityId: productId, before: { costPrice: before.c }, after: { costPrice }, ip: actor.ip, requestId: actor.requestId, at: now });
+  }, 'immediate');
+}
+
 /** Appends one ledger row. Does NOT touch products.stock: callers either use `applyMovement` or already changed it. */
 export function insertMovement(tx: Db, m: Movement): void {
   tx.run(
-    `INSERT INTO stock_movements (product_id, shade_code, delta, reason, channel, order_id, unit_price, note, actor_user_id, at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO stock_movements (product_id, shade_code, delta, reason, channel, order_id, unit_price, unit_cost, note, actor_user_id, at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     m.productId,
     m.shadeCode,
     m.delta,
@@ -45,6 +73,7 @@ export function insertMovement(tx: Db, m: Movement): void {
     m.channel ?? null,
     m.orderId ?? null,
     m.unitPrice ?? null,
+    m.unitCost ?? null,
     m.note ?? null,
     m.actorUserId ?? null,
     m.at,
@@ -97,7 +126,7 @@ export function consumeForOrder(
 }
 
 /** Puts back whatever an order still holds (cancelled, refused or returned). Idempotent: a settled order nets to zero. */
-export function restockForOrder(tx: Db, orderId: string, actorUserId: string | null, at: number): void {
+export function restockForOrder(tx: Db, orderId: string, actorUserId: string | null, at: number, note = 'Commande annulée, refusée ou retournée'): void {
   const rows = tx.all<{ product_id: string; shade_code: string; q: number }>(
     'SELECT product_id, shade_code, SUM(delta) AS q FROM stock_movements WHERE order_id = ? GROUP BY product_id, shade_code HAVING SUM(delta) < 0',
     orderId,
@@ -109,7 +138,7 @@ export function restockForOrder(tx: Db, orderId: string, actorUserId: string | n
       delta: -r.q,
       reason: 'return',
       orderId,
-      note: 'Commande annulée, refusée ou retournée',
+      note,
       actorUserId,
       at,
     });
@@ -120,7 +149,7 @@ export function restockForOrder(tx: Db, orderId: string, actorUserId: string | n
 export function recordManualMovement(db: Db, actor: StockActor, input: MovementInput, now: number): StockProduct {
   return db.transaction((tx) => {
     authoriseStockWrite(tx, actor.userId);
-    const product = tx.get<{ id: string; name: string; data: string }>('SELECT id, name, data FROM products WHERE id = ?', input.productId);
+    const product = tx.get<{ id: string; name: string; data: string; stock: number; cost_price: number }>('SELECT id, name, data, stock, cost_price FROM products WHERE id = ? AND deleted_at IS NULL', input.productId);
     if (!product) throw notFound();
 
     if (input.shadeCode !== '') {
@@ -139,13 +168,27 @@ export function recordManualMovement(db: Db, actor: StockActor, input: MovementI
     if (delta < 0 && bucketLevel(tx, product.id, input.shadeCode) + delta < 0) {
       throw validation({ quantity: 'Stock insuffisant dans cette réserve.' });
     }
+    // Receiving stock at a cost keeps the product's real cost as a weighted average of what is on hand and what arrives.
+    let unitCost: number | null = null;
+    if (reason === 'sale_offsite') unitCost = product.cost_price;
+    // Only finance users may feed the real cost: for anyone else a reception just adds stock.
+    const mayCost =
+      tx.get<{ o: number }>('SELECT is_owner AS o FROM users WHERE id = ?', actor.userId)?.o === 1 ||
+      tx.get("SELECT 1 AS ok FROM user_permissions WHERE user_id = ? AND permission = 'finance.read'", actor.userId) !== undefined;
+    if (reason === 'purchase' && input.unitPrice !== undefined && mayCost) {
+      unitCost = input.unitPrice;
+      const onHand = Math.max(0, product.stock);
+      const blended = Math.round((onHand * product.cost_price + input.quantity * input.unitPrice) / (onHand + input.quantity));
+      tx.run('UPDATE products SET cost_price = ? WHERE id = ?', blended, product.id);
+    }
     applyMovement(tx, {
       productId: product.id,
       shadeCode: input.shadeCode,
       delta,
       reason,
+      unitCost,
       channel: reason === 'sale_offsite' ? (input.channel ?? null) : null,
-      unitPrice: input.unitPrice ?? null,
+      unitPrice: reason === 'purchase' && !mayCost ? null : (input.unitPrice ?? null),
       note: input.note ? input.note : null,
       actorUserId: actor.userId,
       at: now,
@@ -161,17 +204,17 @@ export function recordManualMovement(db: Db, actor: StockActor, input: MovementI
       requestId: actor.requestId,
       at: now,
     });
-    const overview = readOverview(tx).find((p) => p.id === product.id);
+    const overview = readOverview(tx, { withCost: false }).find((p) => p.id === product.id);
     if (!overview) throw notFound();
     return overview;
   }, 'immediate');
 }
 
 /** Per-product stock with its per-shade breakdown and sales split. */
-export function readOverview(db: Db): StockProduct[] {
+export function readOverview(db: Db, opts: { withCost?: boolean } = {}): StockProduct[] {
   ensureDefaultProduct(db);
-  const products = db.all<{ id: string; slug: string; name: string; stock: number; low: number; is_active: number; data: string }>(
-    'SELECT id, slug, name, stock, low_stock_threshold AS low, is_active, data FROM products ORDER BY is_default DESC, created_at DESC',
+  const products = db.all<{ id: string; slug: string; name: string; price: number; cost: number; stock: number; low: number; is_active: number; data: string }>(
+    'SELECT id, slug, name, price, cost_price AS cost, stock, low_stock_threshold AS low, is_active, data FROM products WHERE deleted_at IS NULL ORDER BY is_default DESC, created_at DESC',
   );
   const levels = db.all<{ product_id: string; shade_code: string; q: number }>(
     'SELECT product_id, shade_code, SUM(delta) AS q FROM stock_movements GROUP BY product_id, shade_code',
@@ -196,6 +239,8 @@ export function readOverview(db: Db): StockProduct[] {
       slug: p.slug,
       name: p.name,
       total: p.stock,
+      price: p.price,
+      costPrice: opts.withCost === true ? p.cost : null,
       lowStockThreshold: p.low,
       isActive: p.is_active === 1,
       shades,
