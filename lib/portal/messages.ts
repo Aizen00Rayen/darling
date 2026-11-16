@@ -13,6 +13,7 @@ const MESSAGES: Record<string, string> = {
   invalid_status: 'Cette action n’est pas possible pour le statut actuel de l’utilisateur.',
   mail_failed: 'Le message n’a pas pu être envoyé. Réessayez.',
   not_found: 'Introuvable.',
+  out_of_stock: 'Stock insuffisant pour cette quantité.',
   invalid_transition: 'Ce changement de statut n’est pas possible.',
   idempotency_conflict: 'Cette commande a déjà été enregistrée pour un autre client. Actualisez la page et réessayez.',
   nothing_to_pay: 'Rien à payer pour cette personne (ou le total est nul après déduction des retours).',

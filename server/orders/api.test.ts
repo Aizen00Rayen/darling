@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ORDER_NUMBER_PATTERN } from '@/shared';
 import type { Permission } from '@/shared';
+import { addStock } from '../test/stock';
 import { createTestApp, login, seedUser, totpCodeAt, type TestApp } from '../test/app';
 import { orderInput } from '../test/orders';
 
@@ -196,6 +197,7 @@ describe('POST /api/orders (storefront intake)', () => {
     });
 
     it('the shared "unknown" bucket gets four times the budget', async () => {
+      addStock(app.db, 1000);
       const unknown = { headers: { 'X-Forwarded-For': null as string | null } };
       let ok = 0;
       for (let i = 0; i < 125; i += 1) {

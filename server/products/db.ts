@@ -5,6 +5,7 @@ import type { Db } from '../db/sqlite';
 import { recordAudit } from '../audit';
 import { newId } from '../ids';
 import { isUniqueViolation, notFound, validation } from '../admin/errors';
+import { insertMovement } from '../inventory/stock';
 
 export interface ProductActor {
   userId: string;
@@ -19,6 +20,7 @@ interface ProductRow {
   price: number;
   stock: number;
   max_quantity: number;
+  low_stock_threshold: number;
   is_active: number;
   is_default: number;
   data: string;
@@ -30,7 +32,7 @@ export function ensureDefaultProduct(db: Db, now = Date.now()): void {
   const existing = db.get<{ id: string }>('SELECT id FROM products WHERE slug = ?', defaultProduct.slug);
   if (!existing) {
     const id = '01931a00-0000-7000-8000-000000000001';
-    db.run(
+    const inserted = db.run(
       `INSERT OR IGNORE INTO products (id, slug, name, price, stock, max_quantity, is_active, is_default, data, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id,
@@ -45,6 +47,10 @@ export function ensureDefaultProduct(db: Db, now = Date.now()): void {
       now,
       now,
     );
+    // The opening balance goes in the ledger so that products.stock always equals the sum of the movements.
+    if (Number(inserted.changes) === 1) {
+      insertMovement(db, { productId: id, shadeCode: '', delta: 100, reason: 'initial', note: 'Stock initial', at: now });
+    }
   }
 }
 
@@ -85,6 +91,7 @@ function rowToSummary(row: ProductRow): ProductSummary {
     name: row.name,
     price: row.price,
     stock: row.stock,
+    lowStockThreshold: row.low_stock_threshold,
     maxQuantity: row.max_quantity,
     isActive: row.is_active === 1,
     isDefault: row.is_default === 1,
@@ -143,6 +150,10 @@ export function createProduct(db: Db, actor: ProductActor, input: ProductInput, 
     throw err;
   }
 
+  if (input.stock > 0) {
+    insertMovement(db, { productId: id, shadeCode: '', delta: input.stock, reason: 'initial', note: 'Stock initial à la création', actorUserId: actor.userId, at: now });
+  }
+
   recordAudit(db, {
     actorUserId: actor.userId,
     action: 'product.created',
@@ -174,7 +185,8 @@ export function updateProduct(db: Db, actor: ProductActor, id: string, input: Pa
   const slug = input.slug ?? existing.slug;
   const name = input.name ?? existing.name;
   const price = input.price ?? existing.price;
-  const stock = input.stock ?? existing.stock;
+  // Stock is never edited here: it only moves through the ledger (orders, receptions, corrections in /admin/stock).
+  const stock = existing.stock;
   const maxQuantity = input.maxQuantity ?? existing.max_quantity;
   const isActive = input.isActive !== undefined ? (input.isActive ? 1 : 0) : existing.is_active;
   const isDefault = input.isDefault !== undefined ? (input.isDefault ? 1 : 0) : existing.is_default;

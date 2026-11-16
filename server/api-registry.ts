@@ -43,6 +43,8 @@ import * as userSuspend from '@/app/api/users/[id]/suspend/route';
 import * as userReactivate from '@/app/api/users/[id]/reactivate/route';
 import * as userResend from '@/app/api/users/[id]/resend-invite/route';
 import * as userRevoke from '@/app/api/users/[id]/revoke-sessions/route';
+import * as stock from '@/app/api/stock/route';
+import * as stockMovements from '@/app/api/stock/movements/route';
 import * as products from '@/app/api/products/route';
 import * as productById from '@/app/api/products/[id]/route';
 
@@ -113,6 +115,8 @@ export const ROUTES: readonly RegisteredRoute[] = [
   route('/api/users/:id/reactivate', userReactivate),
   route('/api/users/:id/resend-invite', userResend),
   route('/api/users/:id/revoke-sessions', userRevoke),
+  route('/api/stock', stock),
+  route('/api/stock/movements', stockMovements),
   route('/api/products', products),
   route('/api/products/:id', productById),
   route('/api/auth/login', login),

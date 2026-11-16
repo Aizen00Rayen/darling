@@ -6,6 +6,8 @@ export interface ProductSummary {
   name: string;
   price: number;
   stock: number;
+  /** Stock at or under which the product is flagged as running low. */
+  lowStockThreshold: number;
   maxQuantity: number;
   isActive: boolean;
   isDefault: boolean;

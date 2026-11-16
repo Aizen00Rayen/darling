@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ORDER_NUMBER_PATTERN } from '@/shared';
 import { HttpFailure } from '../admin/errors';
 import { createTestApp, seedUser, type TestApp } from '../test/app';
+import { addStock } from '../test/stock';
 import { orderInput, seedStaff } from '../test/orders';
 import { createOrder, findByIdempotencyKey } from './create';
 
@@ -115,6 +116,7 @@ describe('order numbers', () => {
 
   it('stays unique and gapless under a burst of creates on a file database with several connections', async () => {
     const file = createTestApp({ file: true, connections: 3 });
+    addStock(file.db, 1000);
     try {
       const results = await Promise.all(
         Array.from({ length: 150 }, async (_, i) => {

@@ -106,3 +106,19 @@ describe('OrderForm submit', () => {
     expect((screen.getByRole('button', { name: /CONFIRMER MA COMMANDE/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+describe('OrderForm stock', () => {
+  it('disables ordering and says so when the product is sold out', () => {
+    render(<OrderForm product={{ ...defaultProduct, stock: 0 }} shadeCode={shade} />);
+    const submit = screen.getByRole('button', { name: /ÉPUISÉ/ }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+  });
+
+  it('stops the quantity stepper at the remaining stock', async () => {
+    const user = userEvent.setup();
+    render(<OrderForm product={{ ...defaultProduct, stock: 2 }} shadeCode={shade} />);
+    const plus = screen.getByLabelText('Augmenter la quantité') as HTMLButtonElement;
+    await user.click(plus);
+    expect(plus.disabled).toBe(true);
+  });
+});

@@ -2,6 +2,7 @@ import { INTERNAL_NOTES_MAX, STATUS_NOTE_MAX, canTransition, isOrderStatus, type
 import { HttpFailure, notFound } from '../admin/errors';
 import { recordAudit } from '../audit';
 import { applyOrderStatus } from '../commissions/lifecycle';
+import { restockForOrder } from '../inventory/stock';
 import { authoriseOrdersWrite } from './authorise';
 import { InvalidTransitionError } from './errors';
 import { assertOrderId, readDetail, readOrder } from './read';
@@ -63,6 +64,8 @@ export function changeStatus(deps: OrderDeps, actor: OrderActor, id: string, to:
       requestId: actor.requestId,
       at: now,
     });
+    // Orders that end unsuccessfully give their stock back, once (the ledger nets to zero afterwards).
+    if (to === 'cancelled' || to === 'refused' || to === 'returned') restockForOrder(tx, id, actor.userId, now);
     // The commissions follow the order in the SAME transaction (validate on delivery, cancel or claw back otherwise).
     applyOrderStatus(tx, deps.clock, id, to, { userId: actor.userId, ip: actor.ip, requestId: actor.requestId }, now);
     const detail = readDetail(tx, id);

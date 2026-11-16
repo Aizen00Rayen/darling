@@ -48,6 +48,9 @@ export function OrderForm({ product, shadeCode }: Props) {
   const [chosenMode, setChosenMode] = useState<DeliveryMode>('desk');
   const [address, setAddress] = useState('');
   const [quantity, setQuantity] = useState(1);
+  // Stock is enforced by the server; here it only keeps the stepper honest and shows a sold-out state.
+  const soldOut = product.stock !== undefined && product.stock <= 0;
+  const maxQty = product.stock === undefined ? product.maxQuantity : Math.max(1, Math.min(product.maxQuantity, product.stock));
   // Honeypot: invisible to people, tempting to bots. Anything typed here makes the server drop the order silently.
   const [website, setWebsite] = useState('');
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -259,7 +262,7 @@ export function OrderForm({ product, shadeCode }: Props) {
             type="button"
             aria-label="Diminuer la quantité"
             disabled={quantity <= 1}
-            onClick={() => setQuantity((q) => clampQuantity(q - 1, product.maxQuantity))}
+            onClick={() => setQuantity((q) => clampQuantity(q - 1, maxQty))}
           >
             −
           </button>
@@ -267,8 +270,8 @@ export function OrderForm({ product, shadeCode }: Props) {
           <button
             type="button"
             aria-label="Augmenter la quantité"
-            disabled={quantity >= product.maxQuantity}
-            onClick={() => setQuantity((q) => clampQuantity(q + 1, product.maxQuantity))}
+            disabled={quantity >= maxQty}
+            onClick={() => setQuantity((q) => clampQuantity(q + 1, maxQty))}
           >
             +
           </button>
@@ -298,8 +301,8 @@ export function OrderForm({ product, shadeCode }: Props) {
         />
       </div>
 
-      <button className="submit" type="submit" disabled={pending || !hydrated}>
-        <span>CONFIRMER MA COMMANDE</span>
+      <button className="submit" type="submit" disabled={pending || !hydrated || soldOut}>
+        <span>{soldOut ? 'ÉPUISÉ — REVENEZ BIENTÔT' : 'CONFIRMER MA COMMANDE'}</span>
         <span>
           <ArrowIcon />
         </span>

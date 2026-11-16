@@ -51,10 +51,11 @@ describe('products db', () => {
 
     const updated = updateProduct(db, actor, summary.id, { price: 3800, stock: 45 }, NOW + 1000);
     expect(updated.price).toBe(3800);
-    expect(updated.stock).toBe(45);
+    // Stock is not editable through a product update: it only moves through the ledger.
+    expect(updated.stock).toBe(100);
 
     const read = readProductBySlug(db, 'velvet-gloss');
     expect(read?.price).toBe(3800);
-    expect(read?.stock).toBe(45);
+    expect(read?.stock).toBe(100);
   });
 });

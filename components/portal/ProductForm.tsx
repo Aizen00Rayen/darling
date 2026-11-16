@@ -155,11 +155,15 @@ export function ProductForm({ mode, productId, initial }: Props) {
           />
         </Field>
 
-        <Field label="Stock disponible" hint="Quantité disponible en inventaire">
+        <Field
+          label={mode === 'create' ? 'Stock initial' : 'Stock disponible'}
+          hint={mode === 'create' ? 'Quantité reçue au départ (non répartie par teinte)' : 'Lecture seule : modifiez le stock depuis la page Stock'}
+        >
           <input
             type="number"
             min={0}
             required
+            readOnly={mode === 'edit'}
             value={data.stock}
             onChange={(e) => updateField('stock', parseInt(e.target.value, 10) || 0)}
           />

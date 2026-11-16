@@ -20,7 +20,8 @@ export const metadata: Metadata = { title: 'Tableau de bord — Darling', robots
 
 const DESCRIPTIONS: Record<string, string> = {
   '/admin/commandes': 'Suivi direct, validation COD, expédition et livraisons.',
-  '/admin/produits': 'Catalogue des produits, gestion des stocks et pages de vente.',
+  '/admin/produits': 'Catalogue des produits, prix et pages de vente.',
+  '/admin/stock': 'Stock par teinte, ventes hors site, réceptions et corrections.',
   '/admin/influenceuses': 'Codes promo, tracking des liens, clics et ventes des créatrices.',
   '/admin/commissions': 'Validation des gains sur livraisons et virements.',
   '/admin/utilisateurs': 'Création des sous-managers et des comptes influenceuses.',
@@ -46,7 +47,8 @@ async function Content() {
 
   const stats = me.permissions.includes('orders.read') ? orderStats(ctx.db, ctx.clock.now()) : null;
   const commissions = me.permissions.includes('commissions.manage') ? dashboardTotals(ctx.db) : null;
-  const products = me.permissions.includes('catalog.write') ? listProducts(ctx.db) : [];
+  const products = me.permissions.includes('catalog.write') || me.permissions.includes('stock.write') ? listProducts(ctx.db) : [];
+  const lowStock = me.permissions.includes('stock.write') ? products.filter((p) => p.isActive && p.stock <= p.lowStockThreshold) : [];
   const topAffiliates = me.permissions.includes('commissions.manage')
     ? listAffiliates(ctx.db, { page: 1 }, ctx.config.appOrigin).items.slice(0, 4)
     : [];
@@ -74,6 +76,13 @@ async function Content() {
             <Badge tone="success">Toutes traitées ✓</Badge>
           )}
         </div>
+        {lowStock.length > 0 ? (
+          <Link href="/admin/stock" className="dl-pill-btn dl-pill-btn--primary">
+            <span>
+              {lowStock.length} produit{lowStock.length > 1 ? 's' : ''} en stock bas ou épuisé
+            </span>
+          </Link>
+        ) : null}
         <div className="dl-live-actions">
           {me.permissions.includes('catalog.write') ? (
             <Link href="/admin/produits/nouveau" className="dl-pill-btn">
@@ -230,9 +239,11 @@ async function Content() {
           </div>
           <div className="p-products-grid">
             {products.map((prod) => {
-              const stockMax = 100;
+              // The bar is relative to the best-stocked product (and never to less than 3x the alert level).
+              const stockMax = Math.max(1, ...products.map((p) => p.stock), prod.lowStockThreshold * 3);
               const fillPct = Math.min(100, Math.max(0, Math.round((prod.stock / stockMax) * 100)));
-              const isLow = prod.stock <= 10;
+              const isOut = prod.stock <= 0;
+              const isLow = prod.stock <= prod.lowStockThreshold;
               const productUrl = prod.isDefault ? '/' : `/produit/${prod.slug}`;
 
               return (
@@ -248,7 +259,7 @@ async function Content() {
                   <div>
                     <div className="p-product-tile__stock">
                       <span>Stock disponible</span>
-                      <strong>{prod.stock} unités</strong>
+                      <strong>{isOut ? 'Épuisé' : isLow ? `${prod.stock} unités · bientôt épuisé` : `${prod.stock} unités`}</strong>
                     </div>
                     <div className="p-stock-bar">
                       <div
@@ -268,6 +279,11 @@ async function Content() {
                     >
                       <EyeIcon /> Voir la page ↗
                     </a>
+                    {me.permissions.includes('stock.write') ? (
+                      <Link href="/admin/stock" className="dl-pill-btn" style={{ padding: '6px 14px', fontSize: '10px' }}>
+                        Stock
+                      </Link>
+                    ) : null}
                     {me.permissions.includes('catalog.write') ? (
                       <Link
                         href={`/admin/produits/${prod.id}`}

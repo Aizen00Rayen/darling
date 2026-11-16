@@ -7,6 +7,7 @@ import type { Db } from '../db/sqlite';
 import { newId } from '../ids';
 import { algiersYear2 } from '../util/algiers';
 import { createCommissions } from '../commissions/lifecycle';
+import { consumeForOrder } from '../inventory/stock';
 import { authoriseOrdersWrite } from './authorise';
 import { attributeByCode, resolveAttribution } from './attribution';
 import { idempotencyConflict } from './errors';
@@ -123,6 +124,18 @@ export function createOrder(deps: OrderDeps, input: OrderInput, options: CreateO
           selfReferral: attribution?.selfReferral ?? false,
         },
       );
+      // Stock leaves in the same transaction: an order for unavailable stock is refused and rolled back whole.
+      consumeForOrder(tx, {
+        orderId: id,
+        productSlug: input.productSlug,
+        shadeCode: input.shadeCode,
+        quantity: input.quantity,
+        reason: options.createdBy !== undefined ? 'sale_offsite' : 'sale_website',
+        channel: source,
+        unitPrice: p.unitPrice,
+        actorUserId: options.createdBy ?? null,
+        at: now,
+      });
       if (attribution) {
         if (attribution.clickId !== null) tx.run('UPDATE affiliate_clicks SET order_id = ? WHERE id = ? AND order_id IS NULL', id, attribution.clickId);
         // Commissions are created in THIS transaction: an attributed order never exists without them.

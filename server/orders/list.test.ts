@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ORDER_STATUSES } from '@/shared';
 import { createTestApp, type TestApp } from '../test/app';
+import { addStock } from '../test/stock';
 import { forceStatus, orderInput } from '../test/orders';
 import { createOrder } from './create';
 import { ORDERS_PAGE_SIZE, listOrders, orderStats } from './list';
@@ -8,6 +9,7 @@ import { ORDERS_PAGE_SIZE, listOrders, orderStats } from './list';
 let app: TestApp;
 beforeEach(() => {
   app = createTestApp();
+  addStock(app.db, 1000);
 });
 afterEach(() => app.close());
 
