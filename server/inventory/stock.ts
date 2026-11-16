@@ -1,4 +1,4 @@
-import type { MovementInput, ShadeLevel, StockMovementDto, StockProduct, StockReason } from '@/shared/stock';
+import type { MovementInput, ShadeLevel, StockLevelsInput, StockMovementDto, StockProduct, StockReason } from '@/shared/stock';
 import { ADDING_REASONS, REMOVING_REASONS } from '@/shared/stock';
 import { HttpFailure, forbidden, notFound, validation } from '../admin/errors';
 import { recordAudit } from '../audit';
@@ -143,6 +143,38 @@ export function restockForOrder(tx: Db, orderId: string, actorUserId: string | n
       at,
     });
   }
+}
+
+/**
+ * Sets the exact stock of each listed shade pool (and optionally the low-stock alert level). The ledger stays append-only:
+ * each change is recorded as a correction movement for the difference, so history shows who changed what.
+ */
+export function setStockLevels(db: Db, actor: StockActor, input: StockLevelsInput, now: number): StockProduct {
+  return db.transaction((tx) => {
+    authoriseStockWrite(tx, actor.userId);
+    const product = tx.get<{ id: string; data: string }>('SELECT id, data FROM products WHERE id = ? AND deleted_at IS NULL', input.productId);
+    if (!product) throw notFound();
+    let codes: string[] = [];
+    try {
+      codes = ((JSON.parse(product.data) as { shades?: { code: string }[] }).shades ?? []).map((s) => s.code);
+    } catch {
+      codes = [];
+    }
+    const changes: Record<string, { from: number; to: number }> = {};
+    for (const [shade, target] of Object.entries(input.levels)) {
+      if (shade !== '' && !codes.includes(shade)) throw validation({ levels: `Teinte inconnue : ${shade}.` });
+      const current = bucketLevel(tx, product.id, shade);
+      const delta = target - current;
+      if (delta === 0) continue;
+      applyMovement(tx, { productId: product.id, shadeCode: shade, delta, reason: 'adjustment', note: input.note || 'Correction manuelle du stock', actorUserId: actor.userId, at: now });
+      changes[shade === '' ? 'non réparti' : shade] = { from: current, to: target };
+    }
+    if (input.lowStockThreshold !== undefined) tx.run('UPDATE products SET low_stock_threshold = ?, updated_at = ? WHERE id = ?', input.lowStockThreshold, now, product.id);
+    recordAudit(tx, { actorUserId: actor.userId, action: 'stock.set', entityType: 'product', entityId: product.id, after: { changes, ...(input.lowStockThreshold !== undefined ? { lowStockThreshold: input.lowStockThreshold } : {}) }, ...(input.note ? { reason: input.note } : {}), ip: actor.ip, requestId: actor.requestId, at: now });
+    const overview = readOverview(tx, { withCost: false }).find((p) => p.id === product.id);
+    if (!overview) throw notFound();
+    return overview;
+  }, 'immediate');
 }
 
 /** Records a manual movement (reception, off-site sale, return, damage, correction) in one transaction. */

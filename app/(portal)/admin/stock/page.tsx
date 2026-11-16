@@ -4,6 +4,7 @@ import { PageLoading } from '@/components/portal/PageLoading';
 import { AccessDenied } from '@/components/portal/AccessDenied';
 import { CostEditor } from '@/components/portal/CostEditor';
 import { DeleteProductButton } from '@/components/portal/DeleteProductButton';
+import { StockLevelsForm } from '@/components/portal/StockLevelsForm';
 import { StockMovementForm } from '@/components/portal/StockMovementForm';
 import { formatMoney } from '@/lib/pricing';
 import '@/components/portal/dash/dashboard.css';
@@ -105,6 +106,12 @@ async function Content() {
             : []),
         ]}
       />
+
+      <section aria-labelledby="lv-form" id="modifier">
+        <h2 id="lv-form">Modifier le stock</h2>
+        <p className="p-subtle">Fixez la quantité exacte de chaque teinte. La différence est enregistrée dans l’historique.</p>
+        <StockLevelsForm key={products.map((p) => `${p.id}:${p.total}:${p.price}`).join('|')} products={products} canPrice={me.permissions.includes('catalog.write')} />
+      </section>
 
       <section aria-labelledby="mv-form" id="mouvement">
         <h2 id="mv-form">Enregistrer un mouvement</h2>

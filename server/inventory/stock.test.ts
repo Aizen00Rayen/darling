@@ -4,7 +4,7 @@ import { orderInput } from '../test/orders';
 import { createOrder } from '../orders/create';
 import { changeStatus } from '../orders/status';
 import { ensureDefaultProduct } from '../products/db';
-import { listMovements, readOverview, recordManualMovement } from './stock';
+import { listMovements, readOverview, recordManualMovement, setStockLevels } from './stock';
 
 let app: TestApp;
 beforeEach(() => {
@@ -86,5 +86,26 @@ describe('stock ledger', () => {
   it('the ledger is append-only', () => {
     expect(() => app.db.run('DELETE FROM stock_movements')).toThrow(/append-only/);
     expect(() => app.db.run('UPDATE stock_movements SET delta = 5')).toThrow(/append-only/);
+  });
+});
+
+describe('set stock levels', () => {
+  it('sets exact quantities per shade, records the differences and can change the alert level', async () => {
+    const actor = await stockManager();
+    const out = setStockLevels(app.db, actor, { productId: productId(), levels: { '*01': 12, '': 40 }, lowStockThreshold: 5 }, Date.now());
+    expect(out.shades.find((s) => s.shadeCode === '*01')?.quantity).toBe(12);
+    expect(out.shades.find((s) => s.shadeCode === '')?.quantity).toBe(40);
+    expect(out.total).toBe(52);
+    expect(out.lowStockThreshold).toBe(5);
+    expect(ledgerSum()).toBe(52);
+    expect(listMovements(app.db).filter((m) => m.reason === 'adjustment')).toHaveLength(2);
+    // Setting the same numbers again changes nothing.
+    setStockLevels(app.db, actor, { productId: productId(), levels: { '*01': 12, '': 40 } }, Date.now());
+    expect(listMovements(app.db).filter((m) => m.reason === 'adjustment')).toHaveLength(2);
+  });
+
+  it('rejects an unknown shade', async () => {
+    const actor = await stockManager();
+    expect(() => setStockLevels(app.db, actor, { productId: productId(), levels: { '*99': 1 } }, Date.now())).toThrow(/validation/);
   });
 });

@@ -100,6 +100,7 @@ const MATRIX: Row[] = [
   { route: '/api/users/:id/revoke-sessions', method: 'POST', path: `/api/users/${UNKNOWN_ID}/revoke-sessions`, ...USERS, allowed: [404] },
   // catalog.write
   { route: '/api/stock', method: 'GET', ...STOCK, allowed: [200] },
+  { route: '/api/stock/levels', method: 'POST', body: {}, ...STOCK, allowed: [400] },
   { route: '/api/stock/cost', method: 'POST', body: {}, ...FINANCE, allowed: [400] },
   { route: '/api/reports/export', method: 'GET', ...FINANCE, allowed: [200] },
   { route: '/api/orders/:id/edit', method: 'PATCH', path: `/api/orders/${UNKNOWN_ID}/edit`, body: {}, ...ORDERS_WRITE, allowed: [400, 404] },

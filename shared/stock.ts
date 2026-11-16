@@ -86,3 +86,12 @@ export interface StockMovementDto {
   actorName: string | null;
   at: number;
 }
+
+/** Sets exact quantities: the server records the difference as correction movements. `levels` is keyed by shade code ('' = unallocated). */
+export const stockLevelsSchema = z.object({
+  productId: z.string().min(1, 'Produit requis.'),
+  levels: z.record(z.string().max(20), z.number().int('Quantité entière requise.').min(0, 'La quantité ne peut pas être négative.').max(1_000_000)),
+  lowStockThreshold: z.number().int().min(0).max(100000).optional(),
+  note: z.string().trim().max(500).optional(),
+});
+export type StockLevelsInput = z.infer<typeof stockLevelsSchema>;

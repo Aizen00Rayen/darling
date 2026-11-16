@@ -47,6 +47,7 @@ import * as orderEdit from '@/app/api/orders/[id]/edit/route';
 import * as userDelete from '@/app/api/users/[id]/delete/route';
 import * as stockCost from '@/app/api/stock/cost/route';
 import * as reportsExport from '@/app/api/reports/export/route';
+import * as stockLevels from '@/app/api/stock/levels/route';
 import * as stock from '@/app/api/stock/route';
 import * as stockMovements from '@/app/api/stock/movements/route';
 import * as products from '@/app/api/products/route';
@@ -123,6 +124,7 @@ export const ROUTES: readonly RegisteredRoute[] = [
   route('/api/users/:id/delete', userDelete),
   route('/api/stock/cost', stockCost),
   route('/api/reports/export', reportsExport),
+  route('/api/stock/levels', stockLevels),
   route('/api/stock', stock),
   route('/api/stock/movements', stockMovements),
   route('/api/products', products),
