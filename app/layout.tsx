@@ -16,13 +16,13 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://darling7.store'),
-  title: 'Darling — Wet Kiss · Lip Fondue',
+  title: 'Darling* — Beauty on-the-go, maintenant en Algérie',
   description:
-    'Wet Kiss par Darling. Une texture fondante, un fini glossy et quatre teintes à découvrir. 3 300 DA. Commandez en Algérie, paiement à la livraison.',
+    'Soin et maquillage ludiques, cruelty-free. Découvrez Darling* en Algérie : commande en ligne, paiement à la livraison.',
   icons: { icon: '/assets/darling-logo.png' },
   openGraph: {
-    title: 'Darling — Wet Kiss',
-    description: 'La touche de gloss qui change tout. Découvrez votre teinte.',
+    title: 'Darling* — Beauty on-the-go',
+    description: 'Soin et maquillage ludiques, livrés partout en Algérie.',
     images: ['/assets/texture.jpg'],
   },
 };
