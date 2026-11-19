@@ -33,8 +33,8 @@ describe('createOrder (storefront)', () => {
       shadeCode: '*02',
       quantity: 2,
       unitPrice: 3300,
-      deliveryFee: 300,
-      total: 6900,
+      deliveryFee: 400,
+      total: 7000,
       internalNotes: null,
       createdBy: null,
       confirmedAt: null,
@@ -44,12 +44,12 @@ describe('createOrder (storefront)', () => {
     });
     expect(order.createdAt).toBe(new Date(app.clock.now()).toISOString());
     const row = app.db.get<Record<string, unknown>>('SELECT * FROM orders WHERE id = ?', order.id);
-    expect(row).toMatchObject({ unit_price: 3300, delivery_fee: 300, total: 6900, created_at: app.clock.now(), updated_at: app.clock.now() });
+    expect(row).toMatchObject({ unit_price: 3300, delivery_fee: 400, total: 7000, created_at: app.clock.now(), updated_at: app.clock.now() });
   });
 
   it('charges home delivery and keeps the address', () => {
-    const { order } = createOrder(app, orderInput({ quantity: 1, wilayaCode: 37, mode: 'home', address: 'Cité 5 juillet' }), { source: 'website' });
-    expect(order).toMatchObject({ deliveryMode: 'home', address: 'Cité 5 juillet', deliveryFee: 1650, total: 4950, wilayaName: 'Tindouf' });
+    const { order } = createOrder(app, orderInput({ quantity: 1, wilayaCode: 50, mode: 'home', address: 'Cité 5 juillet' }), { source: 'website' });
+    expect(order).toMatchObject({ deliveryMode: 'home', address: 'Cité 5 juillet', deliveryFee: 1600, total: 4900, wilayaName: 'Bordj Badji Mokhtar' });
   });
 
   it('writes the first history row ("new", no previous status, no actor) in the same transaction', () => {
@@ -67,7 +67,7 @@ describe('createOrder (storefront)', () => {
   it('refuses a desk order to a wilaya without desk service and stores nothing', () => {
     let err: unknown;
     try {
-      createOrder(app, orderInput({ wilayaCode: 37, mode: 'desk' }), { source: 'website' });
+      createOrder(app, orderInput({ wilayaCode: 50, mode: 'desk' }), { source: 'website' });
     } catch (e) {
       err = e;
     }
@@ -85,7 +85,7 @@ describe('createOrder (storefront)', () => {
 
   it('ignores any price carried by the input (prices come from data/ only)', () => {
     const tampered = { ...orderInput(), unitPrice: 1, deliveryFee: 0, total: 1 } as unknown as ReturnType<typeof orderInput>;
-    expect(createOrder(app, tampered, { source: 'website' }).order).toMatchObject({ unitPrice: 3300, deliveryFee: 300, total: 6900 });
+    expect(createOrder(app, tampered, { source: 'website' }).order).toMatchObject({ unitPrice: 3300, deliveryFee: 400, total: 7000 });
   });
 });
 
@@ -200,7 +200,7 @@ describe('createOrder (manual entry by staff)', () => {
       'SELECT * FROM audit_log',
     );
     expect(audit).toMatchObject({ actor_user_id: staff.userId, action: 'order.created_manual', entity_type: 'order', entity_id: order.id, ip: '10.9.9.9', request_id: 'req-test' });
-    expect(JSON.parse(audit!.after)).toEqual({ number: order.number, source: 'whatsapp', total: 6900 });
+    expect(JSON.parse(audit!.after)).toEqual({ number: order.number, source: 'whatsapp', total: 7000 });
     expect(audit!.after).not.toContain('0612345678'); // no customer data in the audit log
     expect(audit!.after).not.toContain('Amel');
   });

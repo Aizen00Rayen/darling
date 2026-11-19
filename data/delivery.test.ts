@@ -8,17 +8,12 @@ describe('delivery data', () => {
   });
 
   it('carries the live home and desk rates', () => {
-    expect(getWilaya(16)).toEqual({ code: 16, name: 'Alger', home: 450, desk: 300 });
-    expect(getWilaya(1)).toMatchObject({ name: 'Adrar', home: 1650, desk: 850 });
+    expect(getWilaya(16)).toEqual({ code: 16, name: 'Alger', home: 650, desk: 400 });
+    expect(getWilaya(1)).toMatchObject({ name: 'Adrar', home: 1300, desk: 900 });
   });
 
   it('marks wilayas without Stop Desk service as null, never free', () => {
-    expect(wilayas.filter((w) => w.desk === null).map((w) => w.name)).toEqual([
-      'Tindouf',
-      'Bordj Badji Mokhtar',
-      'Beni Abbes',
-      'In Guezzam',
-    ]);
+    expect(wilayas.filter((w) => w.desk === null).map((w) => w.name)).toEqual(['Bordj Badji Mokhtar', 'In Guezzam']);
     expect(wilayas.every((w) => w.home > 0 && (w.desk === null || w.desk > 0))).toBe(true);
   });
 

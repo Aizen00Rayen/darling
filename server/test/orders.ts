@@ -3,7 +3,7 @@ import type { OrderStatus } from '@/shared';
 import type { OrderActor } from '../orders/types';
 import { seedUser, type TestApp } from './app';
 
-/** A valid storefront order (Stop Desk in Alger, 2 x Wet Kiss: 3300 x 2 + 300 = 6900 DA). */
+/** A valid storefront order (Stop Desk in Alger, 2 x Wet Kiss: 3300 x 2 + 400 = 7000 DA). */
 export function orderInput(over: Partial<OrderInput> = {}): OrderInput {
   return {
     productSlug: 'wet-kiss',

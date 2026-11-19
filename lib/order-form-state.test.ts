@@ -5,8 +5,8 @@ const norm = (s: string) => s.replace(/\s/g, ' ');
 
 describe('delivery mode rules', () => {
   it('forces home delivery where there is no desk service', () => {
-    expect(resolveMode(37, 'desk')).toBe('home');
-    expect(resolveMode(37, 'home')).toBe('home');
+    expect(resolveMode(50, 'desk')).toBe('home');
+    expect(resolveMode(50, 'home')).toBe('home');
   });
 
   it('keeps the chosen mode otherwise', () => {
@@ -16,7 +16,7 @@ describe('delivery mode rules', () => {
   });
 
   it('reports desk availability, defaulting to available before a wilaya is chosen', () => {
-    expect(deskAvailable(37)).toBe(false);
+    expect(deskAvailable(50)).toBe(false);
     expect(deskAvailable(16)).toBe(true);
     expect(deskAvailable(null)).toBe(true);
   });
@@ -45,7 +45,7 @@ describe('summary', () => {
 
   it('shows the fee and total once a wilaya is chosen', () => {
     const s = summary({ price: 3000, quantity: 2, wilayaCode: 16, mode: 'home' });
-    expect(norm(s.delivery)).toBe('450 DA');
-    expect(norm(s.total)).toBe('6 450 DA');
+    expect(norm(s.delivery)).toBe('650 DA');
+    expect(norm(s.total)).toBe('6 650 DA');
   });
 });

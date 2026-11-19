@@ -12,14 +12,14 @@ describe('formatMoney', () => {
 
 describe('deliveryFee', () => {
   it('returns the rate for the chosen mode', () => {
-    expect(deliveryFee(16, 'home')).toBe(450);
-    expect(deliveryFee(16, 'desk')).toBe(300);
-    expect(deliveryFee(56, 'home')).toBe(2000);
+    expect(deliveryFee(16, 'home')).toBe(650);
+    expect(deliveryFee(16, 'desk')).toBe(400);
+    expect(deliveryFee(56, 'home')).toBe(2200);
   });
 
   it('returns null when the wilaya has no desk service', () => {
-    expect(deliveryFee(37, 'desk')).toBeNull();
-    expect(deliveryFee(37, 'home')).toBe(1650);
+    expect(deliveryFee(50, 'desk')).toBeNull();
+    expect(deliveryFee(50, 'home')).toBe(1600);
   });
 
   it('returns null for an unknown wilaya', () => {
@@ -29,11 +29,11 @@ describe('deliveryFee', () => {
 
 describe('orderTotal', () => {
   it('adds one delivery fee to price times quantity', () => {
-    expect(orderTotal({ price: 3000, quantity: 1, wilayaCode: 16, mode: 'desk' })).toBe(3300);
-    expect(orderTotal({ price: 3000, quantity: 3, wilayaCode: 16, mode: 'home' })).toBe(9450);
+    expect(orderTotal({ price: 3000, quantity: 1, wilayaCode: 16, mode: 'desk' })).toBe(3400);
+    expect(orderTotal({ price: 3000, quantity: 3, wilayaCode: 16, mode: 'home' })).toBe(9650);
   });
 
   it('returns null when delivery is unavailable', () => {
-    expect(orderTotal({ price: 3000, quantity: 1, wilayaCode: 37, mode: 'desk' })).toBeNull();
+    expect(orderTotal({ price: 3000, quantity: 1, wilayaCode: 50, mode: 'desk' })).toBeNull();
   });
 });

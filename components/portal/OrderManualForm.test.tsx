@@ -38,26 +38,26 @@ describe('OrderManualForm', () => {
     const user = userEvent.setup();
     render(<OrderManualForm />);
     expect(totalText()).toContain('Choisissez une wilaya');
-    await user.selectOptions(screen.getByLabelText('Wilaya'), '16'); // Alger: desk 300, home 450, price 3300
-    expect(totalText()).toContain('300 DA');
-    expect(totalText()).toContain('3 600 DA');
+    await user.selectOptions(screen.getByLabelText('Wilaya'), '16'); // Alger: desk 400, home 650, price 3300
+    expect(totalText()).toContain('400 DA');
+    expect(totalText()).toContain('3 700 DA');
     await user.clear(screen.getByLabelText('Quantité'));
     await user.type(screen.getByLabelText('Quantité'), '2');
-    expect(totalText()).toContain('39 900 DA');
+    expect(totalText()).toContain('40 000 DA');
     await user.click(screen.getByLabelText('À domicile'));
-    expect(totalText()).toContain('450 DA');
-    expect(totalText()).toContain('40 050 DA');
+    expect(totalText()).toContain('650 DA');
+    expect(totalText()).toContain('40 250 DA');
   });
 
   it('disables Stop Desk where the wilaya has no desk service and forces home delivery', async () => {
     const user = userEvent.setup();
     render(<OrderManualForm />);
-    await user.selectOptions(screen.getByLabelText('Wilaya'), '37'); // Tindouf: no desk
+    await user.selectOptions(screen.getByLabelText('Wilaya'), '50'); // Bordj Badji Mokhtar: no desk
     const desk = screen.getByLabelText(/Stop Desk/) as HTMLInputElement;
     expect(desk.disabled).toBe(true);
     expect((screen.getByLabelText('À domicile') as HTMLInputElement).checked).toBe(true);
     expect(screen.getByLabelText('Adresse de livraison')).toBeTruthy(); // address appears for home delivery
-    expect(totalText()).toContain('1 650 DA');
+    expect(totalText()).toContain('1 600 DA');
   });
 
   it('shows local errors next to the fields and sends nothing when required fields are missing', async () => {

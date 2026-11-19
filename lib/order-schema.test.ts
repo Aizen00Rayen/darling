@@ -75,8 +75,8 @@ describe('parseOrder', () => {
   });
 
   it('rejects Stop Desk where the wilaya has no desk service', () => {
-    expectError({ ...valid, wilayaCode: 37, mode: 'desk' }, 'mode');
-    expect(parseOrder({ ...valid, wilayaCode: 37, mode: 'home', address: 'Cité 5 juillet' }).ok).toBe(true);
+    expectError({ ...valid, wilayaCode: 50, mode: 'desk' }, 'mode');
+    expect(parseOrder({ ...valid, wilayaCode: 50, mode: 'home', address: 'Cité 5 juillet' }).ok).toBe(true);
   });
 
   it.each([null, 'text', 42, []])('rejects non-object input %j', (data) => {

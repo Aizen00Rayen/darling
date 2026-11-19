@@ -28,14 +28,14 @@ describe('POST /api/orders (storefront intake)', () => {
     const res = await place(orderInput());
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ ok: true, order: { ...orderInput(), unitPrice: 3300, deliveryFee: 300, total: 6900, number: 'DL-23-000001' } });
+    expect(body).toEqual({ ok: true, order: { ...orderInput(), unitPrice: 3300, deliveryFee: 400, total: 7000, number: 'DL-23-000001' } });
     expect(body.order.number).toMatch(ORDER_NUMBER_PATTERN);
     expect(app.db.get('SELECT source, status, created_by, customer_name, total FROM orders')).toEqual({
       source: 'website',
       status: 'new',
       created_by: null,
       customer_name: 'Amel B',
-      total: 6900,
+      total: 7000,
     });
     expect(count('order_status_history')).toBe(1);
   });
@@ -43,12 +43,12 @@ describe('POST /api/orders (storefront intake)', () => {
   it('normalises the phone and reprices on the server, ignoring everything the client claims', async () => {
     const res = await place({ ...orderInput({ phone: '0612345678' }), phone: '+213 612 34 56 78', unitPrice: 1, deliveryFee: 0, total: 1, status: 'delivered', source: 'affiliate', createdBy: 'x' });
     const body = await res.json();
-    expect(body.order).toMatchObject({ phone: '0612345678', unitPrice: 3300, deliveryFee: 300, total: 6900 });
-    expect(app.db.get('SELECT status, source, phone, unit_price, total FROM orders')).toEqual({ status: 'new', source: 'website', phone: '0612345678', unit_price: 3300, total: 6900 });
+    expect(body.order).toMatchObject({ phone: '0612345678', unitPrice: 3300, deliveryFee: 400, total: 7000 });
+    expect(app.db.get('SELECT status, source, phone, unit_price, total FROM orders')).toEqual({ status: 'new', source: 'website', phone: '0612345678', unit_price: 3300, total: 7000 });
   });
 
   it('rejects an invalid order with 400 { ok: false, errors } and stores nothing', async () => {
-    const res = await place({ ...orderInput(), phone: '123', wilayaCode: 37, mode: 'desk' });
+    const res = await place({ ...orderInput(), phone: '123', wilayaCode: 50, mode: 'desk' });
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.ok).toBe(false);
@@ -82,7 +82,7 @@ describe('POST /api/orders (storefront intake)', () => {
       const body = await res.json();
       expect(body.ok).toBe(true);
       expect(body.order.number).toMatch(ORDER_NUMBER_PATTERN);
-      expect(body.order).toMatchObject({ total: 6900 }); // same shape as a real success
+      expect(body.order).toMatchObject({ total: 7000 }); // same shape as a real success
       expect(count('orders')).toBe(0);
       expect(count('order_status_history')).toBe(0);
       expect(count('audit_log')).toBe(0);
@@ -391,10 +391,10 @@ describe('a staff member with orders.read only cannot write', () => {
 describe('POST /api/orders/manual', () => {
   it('creates an order for the actor with the chosen source, priced on the server', async () => {
     const me = await staff(['orders.write']);
-    const res = await app.call('/api/orders/manual', { body: { ...orderInput({ quantity: 1, wilayaCode: 37, mode: 'home', address: 'Cité 5 juillet' }), source: 'whatsapp', total: 1 }, cookie: me.cookie });
+    const res = await app.call('/api/orders/manual', { body: { ...orderInput({ quantity: 1, wilayaCode: 50, mode: 'home', address: 'Cité 5 juillet' }), source: 'whatsapp', total: 1 }, cookie: me.cookie });
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body).toMatchObject({ number: 'DL-23-000001', source: 'whatsapp', status: 'new', total: 4950, createdBy: { id: me.id }, deliveryMode: 'home', address: 'Cité 5 juillet' });
+    expect(body).toMatchObject({ number: 'DL-23-000001', source: 'whatsapp', status: 'new', total: 4900, createdBy: { id: me.id }, deliveryMode: 'home', address: 'Cité 5 juillet' });
     expect(body.history).toHaveLength(1);
     expect(app.db.get("SELECT actor_user_id, action, entity_id FROM audit_log WHERE action = 'order.created_manual'")).toEqual({ actor_user_id: me.id, action: 'order.created_manual', entity_id: body.id });
   });
@@ -416,7 +416,7 @@ describe('POST /api/orders/manual', () => {
 
   it('validates like the storefront and reports every field error at once', async () => {
     const me = await staff(['orders.write']);
-    const res = await app.call('/api/orders/manual', { body: { source: 'whatsapp', fullName: 'A', phone: '12', wilayaCode: 37, mode: 'desk', commune: '', productSlug: 'wet-kiss', shadeCode: '*02', quantity: 1 }, cookie: me.cookie });
+    const res = await app.call('/api/orders/manual', { body: { source: 'whatsapp', fullName: 'A', phone: '12', wilayaCode: 50, mode: 'desk', commune: '', productSlug: 'wet-kiss', shadeCode: '*02', quantity: 1 }, cookie: me.cookie });
     expect(res.status).toBe(400);
     expect(Object.keys((await res.json()).errors).sort()).toEqual(['commune', 'fullName', 'mode', 'phone']);
     expect(count('orders')).toBe(0);
