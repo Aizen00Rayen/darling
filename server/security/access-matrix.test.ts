@@ -238,6 +238,7 @@ describe('access matrix', () => {
   beforeAll(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'darling-matrix-'));
     app = createTestApp({ config: { dataDir, cronToken: CRON_TOKEN } });
+    app.db.run("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'true', 1)");
   });
   afterAll(() => {
     app.close();

@@ -11,7 +11,7 @@ describe('settings registry', () => {
 
   it('has defaults that satisfy their own schema', () => {
     expect(SETTING_DEFAULTS).toEqual({
-      'security.require_2fa_super_managers': true,
+      'security.require_2fa_super_managers': false,
       'company.name': 'DARLING*',
       'commission.affiliate_amount': 300,
       'commission.manager_amount': 200,

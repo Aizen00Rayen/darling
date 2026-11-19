@@ -31,6 +31,7 @@ describe('POST /api/setup', () => {
   describe('when SETUP_TOKEN is not set', () => {
     beforeEach(() => {
       app = createTestApp();
+      app.db.run("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'true', 1)");
     });
 
     it('is disabled: 404 not_found, whatever is sent, and nothing is created', async () => {
@@ -47,6 +48,7 @@ describe('POST /api/setup', () => {
   describe('when SETUP_TOKEN is set and no user exists', () => {
     beforeEach(() => {
       app = createTestApp({ config: { setupToken: TOKEN } });
+      app.db.run("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'true', 1)");
     });
 
     it('creates an ACTIVE owner with a hashed password, audits it, and the owner can log in and is asked to enrol 2FA', async () => {

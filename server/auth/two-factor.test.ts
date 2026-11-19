@@ -6,6 +6,7 @@ import { createTestApp, freshIp, login, seedUser, snap, totpCodeAt, wrongCode, t
 let app: TestApp;
 beforeEach(() => {
   app = createTestApp();
+  app.db.run("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'true', 1)");
 });
 afterEach(() => app.close());
 
@@ -194,7 +195,7 @@ describe('POST /api/auth/2fa/disable', () => {
   });
 
   it('lets a Super Manager disable when the requirement is switched off', async () => {
-    app.db.run("INSERT INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'false', 1)");
+    app.db.run("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'false', 1)");
     const { u, cookie } = await signedIn({ role: 'super_manager', totp: true });
     const res = await app.call(D, { body: { password: u.password, code: totpCodeAt(u.totpSecret as string, app.clock.now(), 1) }, cookie });
     expect(res.status).toBe(204);

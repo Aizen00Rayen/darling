@@ -8,6 +8,7 @@ import { decide, withAccess, type Access } from './access';
 let app: TestApp;
 beforeEach(() => {
   app = createTestApp();
+  app.db.run("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'true', 1)");
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -385,10 +386,10 @@ describe('the principal is read from the database on every request', () => {
     const u = await seedUser(app, { role: 'super_manager' });
     const cookie = await login(app, u.email, u.password);
     expect((await hit({ kind: 'authenticated' }, cookie)).status).toBe(403);
-    app.db.run("INSERT INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'false', 1)");
+    app.db.run("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'false', 1)");
     expect((await hit({ kind: 'authenticated' }, cookie)).status).toBe(200);
-    app.db.run("UPDATE settings SET value = '\"false\"'"); // corrupt value: falls back to the safe default (required)
-    expect((await hit({ kind: 'authenticated' }, cookie)).status).toBe(403);
+    app.db.run("UPDATE settings SET value = '\"true\"'"); // corrupt value: falls back to the default (2FA not required)
+    expect((await hit({ kind: 'authenticated' }, cookie)).status).toBe(200);
     app.db.run("UPDATE settings SET value = 'false'");
     app.db.run('UPDATE users SET totp_enabled = 1 WHERE id = ?', u.id);
     app.db.run("UPDATE settings SET value = 'true'");

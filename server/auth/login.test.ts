@@ -17,6 +17,7 @@ import {
 let app: TestApp;
 beforeEach(() => {
   app = createTestApp();
+  app.db.run("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'true', 1)");
 });
 afterEach(() => app.close());
 
@@ -113,7 +114,7 @@ describe('POST /api/auth/login: success', () => {
     const on = (await (await post({ email: sm.email, password: sm.password })).json()) as { user: { mustEnroll2fa: boolean; permissions: string[] } };
     expect(on.user.mustEnroll2fa).toBe(true);
     expect(on.user.permissions).toEqual(['orders.read']);
-    app.db.run("INSERT INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'false', 1)");
+    app.db.run("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'false', 1)");
     const off = (await (await post({ email: sm.email, password: sm.password })).json()) as { user: { mustEnroll2fa: boolean } };
     expect(off.user.mustEnroll2fa).toBe(false);
     const aff = await seedUser(app, { role: 'affiliate' });

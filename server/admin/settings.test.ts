@@ -41,7 +41,7 @@ describe('GET /api/settings', () => {
     app.db.run("INSERT INTO settings (key, value, updated_at) VALUES ('company.name', '\"Maison Rose\"', 1)");
     expect(await json(await get(me.cookie))).toEqual({ ...SETTING_DEFAULTS, 'company.name': 'Maison Rose' });
     app.db.run("INSERT INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', '\"false\"', 1)");
-    expect((await json(await get(me.cookie)))['security.require_2fa_super_managers']).toBe(true);
+    expect((await json(await get(me.cookie)))['security.require_2fa_super_managers']).toBe(false);
   });
 
   it('returns a stored string that looks like another JSON type as a string', async () => {
@@ -91,6 +91,7 @@ describe('PATCH /api/settings/:key', () => {
 
   it('turns the 2FA requirement off and on: 200, audit rows, updated_by, and /me stops asking to enrol', async () => {
     const me = await owner();
+    app.db.run("INSERT INTO settings (key, value, updated_at) VALUES ('security.require_2fa_super_managers', 'true', 1)");
     const sm = await seedUser(app, { role: 'super_manager', permissions: ['audit.read'] });
     const smCookie = await login(app, sm.email, sm.password);
     expect((await json(await app.call('/api/auth/me', { cookie: smCookie }))).mustEnroll2fa).toBe(true);
